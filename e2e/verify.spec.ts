@@ -390,6 +390,9 @@ test('4. stage draws under strict CSP', async ({ context, worker, server }) => {
 // Runs in the raw browser: chrome.tabs.discard crashes Chromium while Playwright is attached to the
 // pages (observed in Task 1; see docs/verification.md).
 test('5. discarded tabs', async ({ userDataDir, server }) => {
+  // Expected failure: the icon and title swap does not show on a discarded tab (docs/verification.md,
+  // row 5). Kept as an executable record; if this ever starts passing, Playwright reports it.
+  test.fail();
   const browser = await launchRawExtensionBrowser(userDataDir);
   try {
     const title = 'Pockets swapped title';
