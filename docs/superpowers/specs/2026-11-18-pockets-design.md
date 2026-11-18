@@ -50,8 +50,10 @@ These would make it a failure even if it works:
 
 ### Working mode
 
-Clicking the toolbar button opens a popup with a working-mode switch. The
-toolbar icon shows which state it is in. Working mode stays on until it is
+*(My call, differs from what was first agreed)* Clicking the toolbar button
+opens a popup with a working-mode switch at the top, so it is two clicks,
+not one. The popup is needed anyway for "add this site" and the taken list.
+The toolbar icon shows which state it is in. Working mode stays on until it is
 switched off, including across browser restarts.
 
 ### Distracting list
@@ -63,8 +65,12 @@ site, including subdomains.
 
 ### Never taken
 
-- Pinned tabs.
-- Tabs playing audio.
+- Pinned tabs, under both rules. *(My call)* Pinning is the user saying
+  "keep this", so a pinned distracting site is left alone even in working
+  mode.
+- Tabs playing audio, under the stale rule only. *(My call)* In working
+  mode a distracting site playing audio is still taken; a video playing in
+  the background is the distraction.
 - The tab the user is looking at in each window, unless it is a distracting
   site in working mode.
 - *(My call)* Tabs where the user has typed into a form since the page
@@ -109,8 +115,11 @@ Pockets takes **one tab per visit**.
      leaves without it. *(My call)* A kept stale tab is left alone for
      another full stale period. A kept distracting tab is left alone until
      working mode is next switched on.
-   - The user switches to the target tab during the countdown: treated as
-     Keep, without the grumpy card text.
+   - The user switches to a **stale** target during the countdown: treated
+     as Keep, without the grumpy card text.
+   - *(My call)* The user switches to a **distracting** target during the
+     countdown: it is not saved. The visit carries on with that page as the
+     stage, and the card shows the time remaining.
 
 ### Pacing
 
@@ -132,9 +141,9 @@ Pockets takes **one tab per visit**.
   the stage is that page, so this case does not arise for it.
 - **The target cannot run extensions or is asleep** (Chrome's memory saver
   discards background tabs): the climb and card play on the stage, but the
-  target's icon and title cannot change. This will be common for stale
-  tabs, so the card is the primary warning and the tab-bar change is a
-  bonus.
+  target's icon and title cannot change. This may be frequent for stale
+  tabs (not yet measured), so the card is the primary warning and the
+  tab-bar change is a bonus.
 - **Reduced motion is set in the OS**: no crawl. The card appears in the
   top-left with the countdown, and Pockets is drawn still beside it.
 
@@ -288,6 +297,21 @@ The owner handed over the technical choices.
   judge of whether it looks alive.
 - **Rebuild, do not copy.** The mock's movement code is the reference, but
   it is rewritten as tested modules. The mock stays in `docs/spikes/`.
+
+## To verify first
+
+These browser behaviours are assumed above and have not been run in a real
+extension. An early task in the plan loads a bare extension and checks each
+one. If any fails, come back to the design before building on it.
+
+- A tab's last-accessed time survives a browser restart and session
+  restore. If it resets, the stale rule needs its own record of when each
+  tab was last opened, which changes the stored data.
+- Undo can reopen a closed tab in its old position with its history.
+- A background tab that is awake can change its own icon and title, and the
+  change shows on the tab bar.
+- The stage can be drawn over pages with a strict content security policy.
+- How often stale tabs are asleep in practice.
 
 ## Left to the builder
 
