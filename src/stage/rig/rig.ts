@@ -31,7 +31,7 @@ export class Rig {
   private look = false;
   private reach = false;
   private steerDelta = 0;
-  private resolve: (() => void) | null = null;
+  private resolve: ((arrived: boolean) => void) | null = null;
   private stillPending = false;
 
   constructor(opts: { start: Pt; heading: number; rand: () => number; still?: boolean }) {
@@ -47,11 +47,16 @@ export class Rig {
     return { front: frameAt(n[1], n[0]), rear: frameAt(n[2], n[1]) };
   }
 
-  travel(path: Pt[], speed: number, opts?: { rest?: boolean }): Promise<void> {
-    this.resolve?.();
+  /** Resolves true on arrival, false when superseded by another travel() or stopped by travel([]). */
+  travel(path: Pt[], speed: number, opts?: { rest?: boolean }): Promise<boolean> {
+    this.resolve?.(false);
     this.resolve = null;
-    if (path.length === 0) return Promise.resolve();
-    return new Promise<void>((res) => {
+    this.stillPending = false;
+    if (path.length === 0) {
+      this.steer.path = [];
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((res) => {
       this.resolve = res;
       if (this.still) {
         const end = path[path.length - 1];
@@ -84,14 +89,14 @@ export class Rig {
       this.stillPending = false;
       const r = this.resolve;
       this.resolve = null;
-      r?.();
+      r?.(true);
     } else {
       const r = stepSteer(s, this.nodes[0], dt, this.t, this.rand);
       this.steerDelta = r.delta;
       if (r.arrived) {
         const res = this.resolve;
         this.resolve = null;
-        res?.();
+        res?.(true);
       }
     }
 
@@ -110,7 +115,9 @@ export class Rig {
   pose(): Pose {
     return {
       nodes: this.nodes.map((p) => ({ x: p.x, y: p.y })),
-      feet: this.feet,
+      feet: this.feet.map((f) => ({
+        ...f, pos: { ...f.pos }, from: { ...f.from }, to: { ...f.to },
+      })),
       headAngle: this.head.angle,
       eye: this.head.eye,
       sniff: this.head.sniff,

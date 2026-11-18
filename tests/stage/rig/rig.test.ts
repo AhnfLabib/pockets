@@ -70,4 +70,48 @@ describe('rig', () => {
     expect(h.x).toBeCloseTo(300);
     expect(h.y).toBeCloseTo(40);
   });
+
+  it('travel([]) stops the rig and resolves the in-flight promise false', async () => {
+    const r = mk();
+    let first: boolean | undefined;
+    void r.travel([{ x: 500, y: 0 }], 150).then((v) => { first = v; });
+    for (let i = 0; i < 30; i++) r.update(DT);
+    const stopped = await r.travel([], 150);
+    expect(stopped).toBe(true);
+    expect(first).toBe(false);
+    for (let i = 0; i < 30; i++) r.update(DT); // let speed bleed off
+    const h0 = r.pose().nodes[0];
+    for (let i = 0; i < 60; i++) r.update(DT);
+    const h1 = r.pose().nodes[0];
+    expect(h1).toEqual(h0);
+  });
+
+  it('a superseded travel resolves false; the new one resolves true on arrival', async () => {
+    const r = mk();
+    let a: boolean | undefined, b: boolean | undefined;
+    void r.travel([{ x: 400, y: 0 }], 150).then((v) => { a = v; });
+    for (let i = 0; i < 20; i++) r.update(DT);
+    void r.travel([{ x: 60, y: 30 }], 150).then((v) => { b = v; });
+    for (let i = 0; i < 60 * 12 && b === undefined; i++) {
+      r.update(DT);
+      await Promise.resolve();
+    }
+    expect(a).toBe(false);
+    expect(b).toBe(true);
+  });
+
+  it('pose() returns copies of the feet', () => {
+    const r = mk();
+    const p = r.pose();
+    const x = p.feet[0].pos.x;
+    p.feet[0].pos.x += 100;
+    p.feet[0].from.x += 100;
+    p.feet[0].to.x += 100;
+    p.feet[0].stepping = true;
+    const q = r.pose();
+    expect(q.feet[0].pos.x).toBe(x);
+    expect(q.feet[0].stepping).toBe(false);
+    expect(q.feet[0].from.x).not.toBe(p.feet[0].from.x);
+    expect(q.feet[0].to.x).not.toBe(p.feet[0].to.x);
+  });
 });
