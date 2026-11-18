@@ -68,7 +68,9 @@ site, including subdomains.
 - The tab the user is looking at in each window, unless it is a distracting
   site in working mode.
 - *(My call)* Tabs where the user has typed into a form since the page
-  loaded, because closing them loses work.
+  loaded, because closing them loses work. Tabs that cannot report this
+  (asleep, or open since before the extension was installed) are treated as
+  not typed in.
 - *(My call)* Sites on a "never take" list in settings, empty by default.
 - Tabs in windows the extension cannot see (incognito unless the user
   enables it).
@@ -78,6 +80,9 @@ site, including subdomains.
 Pockets takes **one tab per visit**.
 
 1. **Pick the target.** Distracting tabs first, then the stalest tab.
+   *(My call)* Only tabs in the focused window are candidates. Tabs in other
+   windows wait until their window is focused, so the warning and the
+   tab-bar change always happen where the user is looking.
 2. **Pick the stage.** The stage is the page the user is looking at, in the
    focused window. If the target is itself the tab being looked at (a
    distracting site in working mode), the stage and the target are the same.
@@ -95,6 +100,11 @@ Pockets takes **one tab per visit**.
    - Countdown ends: the tab closes. In the stage a small tab drops from the
      top edge, Pockets grabs it, crouches, and bolts off the bottom. A
      notice with **Undo** stays for about five seconds.
+   - *(My call)* When the target is the page being looked at, the grab and
+     the start of the bolt play first (well under a second) and then the tab
+     closes, taking the stage with it. The Undo notice then appears on
+     whichever tab becomes active, if that page can run extensions. The
+     taken list in the popup is always the fallback.
    - **Keep this tab**: the tab's icon and title are restored and Pockets
      leaves without it. *(My call)* A kept stale tab is left alone for
      another full stale period. A kept distracting tab is left alone until
@@ -115,9 +125,11 @@ Pockets takes **one tab per visit**.
 ### When the full show is not possible
 
 - **The stage cannot run extensions** (new tab page, browser settings, the
-  Web Store, PDF viewer): no climb. The target tab still shows the icon and
-  title countdown, then closes. *(My call)* A stale-tab visit is postponed
-  up to ten minutes waiting for a usable stage before falling back to this.
+  Web Store, PDF viewer): *(my call)* no visit. Pockets waits and tries
+  again when the user is on a page it can draw on. **No tab is ever closed
+  unless the warning card was shown on screen**; this follows directly from
+  the first anti-goal. If a distracting site is the page being looked at,
+  the stage is that page, so this case does not arise for it.
 - **The target cannot run extensions or is asleep** (Chrome's memory saver
   discards background tabs): the climb and card play on the stage, but the
   target's icon and title cannot change. This will be common for stale
@@ -262,13 +274,18 @@ The owner handed over the technical choices.
   install warning; this is a cost of the concept.
 - **Privacy:** nothing leaves the machine. No network requests, no
   analytics.
-- **Storage:** settings in synced-free local storage; the taken list in
-  local storage.
+- **Storage:** settings and the taken list in the extension's local storage.
 - **Artwork pipeline:** a Python script in `tools/art/` paints the sprite
   sheets and icons using the drawing library from
   github.com/cloveric/claude-drawing-skill (MIT, vendored at a pinned
   commit, only the files used). The generated PNGs are committed, so
   building the extension does not need Python.
+- **First milestone is the character on its own.** Before any extension
+  wiring, the builder produces a standalone page with the final artwork and
+  movement (including the four artwork fixes, which need new drawing code
+  for the tail and legs, not only repainting). The owner judges it against
+  the mock and approves it before work continues. The owner is the only
+  judge of whether it looks alive.
 - **Rebuild, do not copy.** The mock's movement code is the reference, but
   it is rewritten as tested modules. The mock stays in `docs/spikes/`.
 
