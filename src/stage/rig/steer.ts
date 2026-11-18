@@ -97,7 +97,6 @@ export function stepSteer(
       arrived = true;
     }
     s.path.shift();
-    s.elapsed = 0;
   }
   return { arrived, delta };
 }

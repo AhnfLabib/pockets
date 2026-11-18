@@ -64,4 +64,20 @@ describe('steer', () => {
     expect(head).toEqual({ x: 5000, y: 100 });
     expect(s.path).toHaveLength(0);
   });
+
+  it('applies the 9 s timeout to the whole path, not per waypoint', () => {
+    const s = createSteer(0);
+    const head = { x: 0, y: 0 };
+    s.path = [{ x: 160, y: 0 }, { x: 320, y: 0 }, { x: 480, y: 0 }];
+    s.base = 20; // slow: each leg takes about 8 s
+    let now = 0, arrivedAt = -1;
+    while (now < 12 && arrivedAt < 0) {
+      now += DT;
+      if (stepSteer(s, head, DT, now, rand).arrived) arrivedAt = now;
+    }
+    expect(arrivedAt).toBeGreaterThan(8.9);
+    expect(arrivedAt).toBeLessThan(9.2);
+    expect(head).toEqual({ x: 480, y: 0 });
+    expect(s.path).toHaveLength(0);
+  });
 });
