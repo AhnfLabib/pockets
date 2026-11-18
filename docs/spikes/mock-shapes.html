@@ -1,0 +1,276 @@
+<title>Pockets the Raccoon</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Baloo+2:wght@700&display=swap">
+<style>
+/* Layout: character intro with its face at real sizes, then one large mock browser where the raccoon crawls the screen; notes on what changed underneath. */
+:root{
+  --bg:#eceef2; --surface:#f8f9fb; --ink:#1c2230; --muted:#5b6474; --line:#cfd4dc;
+  --accent:#c93c30; --accent-ink:#ffffff;
+  --strip:#dfe3e9; --tab:#f8f9fb; --tab-idle:#d2d7df; --page:#ffffff; --ghost:#e4e7ec; --shadow:0 6px 24px rgba(20,26,40,.18);
+  --display:"Baloo 2","Trebuchet MS",sans-serif; --body:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#14171c; --surface:#1d2128; --ink:#e8ebf0; --muted:#9aa3b2; --line:#343a45;
+  --accent:#ef6a5c; --accent-ink:#1a0d0b;
+  --strip:#0e1014; --tab:#2a2f38; --tab-idle:#1a1d23; --page:#20242b; --ghost:#2e333c; --shadow:0 6px 24px rgba(0,0,0,.5); color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#14171c; --surface:#1d2128; --ink:#e8ebf0; --muted:#9aa3b2; --line:#343a45;
+  --accent:#ef6a5c; --accent-ink:#1a0d0b;
+  --strip:#0e1014; --tab:#2a2f38; --tab-idle:#1a1d23; --page:#20242b; --ghost:#2e333c; --shadow:0 6px 24px rgba(0,0,0,.5); color-scheme:dark }
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5}
+.wrap{max-width:940px;margin:0 auto;padding-block:36px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:24px}
+p{margin:0}
+.hero{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.hero>svg{width:112px;height:117px;flex:none}
+.hero>div{min-width:0;flex:1 1 280px;display:flex;flex-direction:column;gap:6px}
+h1{font-family:var(--display);font-size:clamp(34px,6vw,48px);line-height:1;margin:0}
+.kind{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.hero>div>p{color:var(--muted);max-width:60ch}
+.sizes{display:flex;gap:14px;align-items:center;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.sizes span{display:flex;align-items:center;gap:6px}
+.sizes b{background:var(--tab);border:1px solid var(--line);border-radius:4px;padding:5px;display:grid}
+h2{font-family:var(--display);font-size:20px;margin:0}
+.browser{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--page)}
+.strip{background:var(--strip);padding:8px 8px 0;display:flex;gap:2px;height:42px}
+.tab{flex:1 1 0;min-width:0;background:var(--tab-idle);border-radius:8px 8px 0 0;display:flex;align-items:center;gap:6px;padding:0 10px;font-size:12px;color:var(--muted);transition:flex-grow .3s,opacity .25s,padding .3s,transform .25s}
+.tab span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tab i,.tab svg{width:16px;height:16px;border-radius:3px;flex:none;display:block}
+.tab.active{background:var(--tab);color:var(--ink);font-weight:500}
+.tab.hot{flex-grow:2;color:var(--ink);font-weight:500}
+.tab.hot svg{animation:nudge .5s ease-in-out infinite alternate}
+.tab.gone{flex-grow:.0001;padding:0;opacity:0;gap:0;transform:translateY(30px)}
+@keyframes nudge{to{transform:translateY(-2px) rotate(-8deg)}}
+.url{background:var(--tab);border-bottom:1px solid var(--line);padding:8px 12px}
+.url div{background:var(--ghost);border-radius:999px;font-size:12px;color:var(--muted);padding:4px 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.page{position:relative;height:400px;overflow:hidden;background:var(--page)}
+.doc{padding:34px clamp(70px,14%,130px);display:flex;flex-direction:column;gap:12px}
+.doc h3{font-size:20px;margin:0 0 6px}
+.doc u{display:block;height:10px;border-radius:5px;background:var(--ghost);text-decoration:none}
+#cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.bubble{position:absolute;top:70px;width:min(250px,calc(100% - 24px));background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px;display:flex;flex-direction:column;gap:10px;transform-origin:top left;transition:opacity .2s,transform .2s}
+.bubble[hidden]{display:flex!important;opacity:0;transform:scale(.9);pointer-events:none}
+.brow{display:flex;gap:10px;align-items:center}
+.ring{position:relative;width:40px;height:40px;flex:none}
+.ring svg{width:40px;height:40px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:4}
+.ring .bg{stroke:var(--ghost)}
+.ring .fg{stroke:var(--accent);stroke-linecap:round;stroke-dasharray:100.5;transition:stroke-dashoffset .75s linear}
+.ring em{position:absolute;inset:0;display:grid;place-items:center;font-style:normal;font-weight:700;font-variant-numeric:tabular-nums}
+.btxt{min-width:0;font-size:13px;color:var(--muted);line-height:1.35}
+.btxt b{display:block;color:var(--ink);font-size:15px}
+.bubble button,.toast button{font:inherit;font-size:13px;font-weight:700;border-radius:8px;padding:7px 12px;cursor:pointer;background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.toast{position:absolute;right:12px;bottom:12px;max-width:calc(100% - 24px);background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:8px 10px 8px 12px;display:flex;gap:10px;align-items:center;font-size:13px;transition:opacity .25s,transform .25s}
+.toast[hidden]{display:flex!important;opacity:0;transform:translateY(12px);pointer-events:none}
+.toast svg{width:24px;height:25px;flex:none}
+.status{background:var(--surface);border-top:1px solid var(--line);padding:10px 14px;font-size:14px;color:var(--muted);min-height:22px}
+.go{font:inherit;font-weight:700;background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:10px 18px;cursor:pointer;align-self:flex-start}
+.go:disabled{opacity:.5;cursor:default}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:20px}
+.notes div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.notes p{color:var(--muted);font-size:15px}
+@media (prefers-reduced-motion: reduce){.tab,.bubble,.toast,.ring .fg{transition:none}.tab.hot svg{animation:none}}
+</style>
+
+<div class="wrap">
+  <div class="hero">
+    <svg id="heroFace" aria-hidden="true"></svg>
+    <div>
+      <span class="kind">Raccoon · smug thief · formerly Nab</span>
+      <h1>Pockets</h1>
+      <p>Redrawn with cheek tufts, bigger eyes and a red neckerchief so it is recognisable from any angle. It now crawls across your screen like something walking on the glass, and every paw is placed step by step.</p>
+      <div class="sizes"><span><b><svg class="f" width="16" height="17"></svg></b>Tab icon</span><span><b><svg class="f" width="32" height="33"></svg></b>Toolbar</span></div>
+    </div>
+  </div>
+
+  <div class="browser">
+    <div class="strip" id="strip"></div>
+    <div class="url"><div>docs.example.com/q3-report-draft</div></div>
+    <div class="page" id="page">
+      <div class="doc"><h3>Q3 report draft</h3><u style="width:92%"></u><u style="width:100%"></u><u style="width:84%"></u><u style="width:96%"></u><u style="width:60%"></u><u style="width:0"></u><u style="width:98%"></u><u style="width:88%"></u><u style="width:72%"></u><u style="width:0"></u><u style="width:94%"></u><u style="width:80%"></u></div>
+      <canvas id="cv"></canvas>
+      <div class="bubble" id="bubble" hidden>
+        <div class="brow">
+          <div class="ring"><svg viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="16"/><circle class="fg" id="ringFg" cx="20" cy="20" r="16"/></svg><em id="ringN">5</em></div>
+          <div class="btxt"><b id="bTitle">Mine in 5…</b><span id="bSub">YouTube · not opened for 2 days</span></div>
+        </div>
+        <button type="button" id="keep">Keep this tab</button>
+      </div>
+      <div class="toast" id="toast" hidden><svg class="f"></svg><span id="toastTxt">Pockets took YouTube</span><button type="button" id="undo">Undo</button></div>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+  <button class="go" id="go" type="button">Play it</button>
+
+  <div class="notes">
+    <div><h2>Why it looks more real</h2><p>It moves in bursts like a real animal: scurry, stop, look around, scurry again. The path wanders a little, the head turns before the body does, and it crouches before it bolts.</p></div>
+    <div><h2>The warning is now a card</h2><p>The countdown and a “Keep this tab” button appear next to Pockets on the page, where you can see and click them. Try pressing it during the countdown.</p></div>
+    <div><h2>After the theft</h2><p>The tab drops off the bar, Pockets grabs it and bolts. A small notice stays for a few seconds with Undo.</p></div>
+  </div>
+</div>
+
+<script>
+const FACE=`<path d="M6 19L8 4l13 7zM42 19L40 4 27 11z" fill="#8a93a3" stroke="#8a93a3" stroke-width="3" stroke-linejoin="round"/><path d="M9.5 15L10.5 8l6 3.5zM38.5 15L37.5 8l-6 3.5z" fill="#2a2e3a"/>
+<path d="M24 8C36 8 43 16 43 25l4 4-5 2 3 5h-7c-4 5-9 7-14 7s-10-2-14-7H3l3-5-5-2 4-4C5 16 12 8 24 8z" fill="#8a93a3" stroke="#8a93a3" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M24 9l-3 10 3 3 3-3z" fill="#b9c0cc"/>
+<ellipse cx="15.5" cy="24" rx="8.5" ry="6.2" fill="#2a2e3a" transform="rotate(-14 15.5 24)"/><ellipse cx="32.5" cy="24" rx="8.5" ry="6.2" fill="#2a2e3a" transform="rotate(14 32.5 24)"/>
+<circle cx="16.5" cy="24" r="4.2" fill="#fff"/><circle cx="31.5" cy="24" r="4.2" fill="#fff"/><circle cx="17.3" cy="24.6" r="2.5" fill="#14161c"/><circle cx="30.7" cy="24.6" r="2.5" fill="#14161c"/><circle cx="18.2" cy="23.4" r=".9" fill="#fff"/><circle cx="31.6" cy="23.4" r=".9" fill="#fff"/>
+<ellipse cx="24" cy="33.5" rx="8.5" ry="6.5" fill="#eef0ee"/><path d="M21.2 30h5.6L24 33.4z" fill="#14161c" stroke="#14161c" stroke-width="1.2" stroke-linejoin="round"/><path d="M24 33.5q0 3-3.6 2.8M24 33.5q.3 3.6 5 2.4" stroke="#14161c" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+<path d="M11 40q13 8 26 0l-3 7q-10 5-20 0z" fill="#d9483b"/>`;
+document.querySelectorAll('svg.f,#heroFace').forEach(s=>{s.setAttribute('viewBox','0 0 48 50');s.innerHTML=FACE;});
+const faceSvg=`<svg viewBox="0 0 48 50" aria-hidden="true">${FACE}</svg>`;
+const TABS=[['Q3 report','#3d7be0',1],['Inbox','#d9962f'],['YouTube','#d93a2f'],['Sheet','#2f9d62'],['Flights','#7a5bd0']];
+const still=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $=id=>document.getElementById(id);
+const strip=$('strip'),page=$('page'),cv=$('cv'),ctx=cv.getContext('2d'),status=$('status'),go=$('go'),bubble=$('bubble'),toast=$('toast');
+const wait=ms=>new Promise(r=>setTimeout(r,still?Math.min(ms,120):ms));
+const FUR='#8a93a3',DARK='#2a2e3a',LIGHT='#eef0ee',RED='#d9483b';
+const DIST=[0,15,22,8,8,8,8,8,7];
+let W=0,H=0,busy=false,kept=false,T=0;
+const S={n:[],feet:[],path:[],speed:0,onArrive:null,look:false,reach:false,chip:null,chipT:0,chipFrom:null,v:0,th:-Math.PI/2,phase:0,headA:0,da:0,idle:1,stretch:1,stretchT:1,tailPh:0,ear:0,gaze:0,gazeT:0,headV:0,eye:0,sniff:0,lookT:0,pause:0,burst:1,base:0,rest:false,tt:0};
+function size(){const d=devicePixelRatio||1;W=page.clientWidth;H=page.clientHeight;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);}
+function setChain(x,y){S.n=DIST.map((_,i)=>({x,y:y+DIST.slice(0,i+1).reduce((a,b)=>a+b,0)}));S.feet=[0,1,2,3].map(i=>({...home(i),step:false,t:0}));}
+function frame(b){const a=S.n[b-1],c=S.n[b],dx=a.x-c.x,dy=a.y-c.y,l=Math.hypot(dx,dy)||1;return{fx:dx/l,fy:dy/l,px:-dy/l,py:dx/l};}
+function home(i){const b=i<2?1:2,f=frame(b),s=i%2?1:-1,base=S.n[b],fw=i<2?(S.reach?21:9):1,lat=i<2&&S.reach?8:15;
+  return{x:base.x+f.fx*fw+f.px*s*lat,y:base.y+f.fy*fw+f.py*s*lat};}
+const ADJ=[[1,2],[0,3],[0,3],[1,2]];
+const noise=t=>Math.sin(t*1.3)*.5+Math.sin(t*2.9+1.7)*.3+Math.sin(t*5.3+.4)*.2;
+function travel(pts,speed,rest){return new Promise(res=>{S.path=pts.slice();S.base=speed;S.onArrive=res;S.rest=rest!==false&&speed<250;S.burst=.5+Math.random()*.5;S.pause=0;S.tt=0;});}
+function arrive(){S.path.shift();if(!S.path.length){S.v=0;const cb=S.onArrive;S.onArrive=null;cb&&cb();}}
+function tick(dt){
+  const h=S.n[0];S.da=0;
+  if(S.path.length){
+    const g=S.path[0],dx=g.x-h.x,dy=g.y-h.y,d=Math.hypot(dx,dy),lastPt=S.path.length==1;S.tt+=dt;
+    if(still||S.tt>9){h.x=g.x;h.y=g.y;if(d>1)S.th=Math.atan2(dy,dx);S.tt=0;arrive();}
+    else{
+      let want=0;const fast=S.base>250;
+      if(S.pause>0)S.pause-=dt;
+      else{want=S.base;if(lastPt)want=Math.min(want,Math.max(40,d*5));
+        if(S.rest){S.burst-=dt;if(S.burst<=0&&d>70){S.pause=.22+Math.random()*.45;S.burst=.55+Math.random()*.75;S.lookT=(Math.random()-.5)*1.7;}}}
+      S.v+=(want-S.v)*Math.min(1,dt*(want>S.v?7:11));
+      let da=Math.atan2(dy,dx)-S.th;da=Math.atan2(Math.sin(da),Math.cos(da));S.da=da;
+      const rate=d<40?14:(fast?12:7);S.th+=Math.max(-rate*dt,Math.min(rate*dt,da));
+      if(d>45&&S.v>30&&!fast)S.th+=noise(T*1.7)*.9*dt;
+      const st=S.v*dt;h.x+=Math.cos(S.th)*st;h.y+=Math.sin(S.th)*st;S.phase+=st/9;
+      if(d<(lastPt?3.5:(fast?30:16))){if(lastPt){h.x=g.x;h.y=g.y;}arrive();}
+    }
+  }else S.v+=(0-S.v)*Math.min(1,dt*10);
+  S.idle+=((S.v<12?1:0)-S.idle)*Math.min(1,dt*5);
+  S.stretch+=(S.stretchT-S.stretch)*Math.min(1,dt*12);
+  S.tailPh+=dt*(2.1+(1-S.idle)*4.5);
+  for(let i=1;i<S.n.length;i++){const a=S.n[i-1],c=S.n[i],dx=c.x-a.x,dy=c.y-a.y,l=Math.hypot(dx,dy)||1,ds=DIST[i]*(i<=2?S.stretch:1);c.x=a.x+dx/l*ds;c.y=a.y+dy/l*ds;}
+  // head: quick snaps to a new gaze, then a hold, on a springy neck; eyes get there first
+  S.gazeT-=dt;
+  if(S.gazeT<=0){S.gazeT=.35+Math.random()*.95;
+    if(S.reach)S.gaze=Math.random()<.45?.8:(Math.random()-.5)*.3;else S.gaze=(Math.random()*2-1)*.7;
+    if(Math.random()<.45)S.sniff=1;}
+  let ht;
+  if(S.look||S.reach)ht=S.gaze;
+  else if(S.pause>0)ht=S.lookT;
+  else ht=Math.max(-.6,Math.min(.6,S.da*.6));
+  S.headV+=((ht-S.headA)*230-S.headV*19)*dt;S.headA+=S.headV*dt;
+  S.eye=Math.max(-1,Math.min(1,(ht-S.headA)*2.2));
+  S.sniff=Math.max(0,S.sniff-dt*2.2);
+  if(Math.random()<dt*.6)S.ear=1;S.ear=Math.max(0,S.ear-dt*6);
+  const dur=S.v>250?.05:.12;
+  S.feet.forEach((f,i)=>{const hm=home(i),d=Math.hypot(f.x-hm.x,f.y-hm.y);
+    if(d>48){f.x=hm.x;f.y=hm.y;f.step=false;return;}
+    if(f.step){f.t+=dt/dur;const k=Math.min(1,f.t),c=1.3,e=1+(c+1)*Math.pow(k-1,3)+c*Math.pow(k-1,2);f.x=f.fx+(f.tx-f.fx)*e;f.y=f.fy+(f.ty-f.fy)*e;if(k>=1)f.step=false;}
+    else if(d>(f.thr||13)&&!ADJ[i].some(j=>S.feet[j].step)){const fr=frame(i<2?1:2),o=S.v>20?8:0;f.fx=f.x;f.fy=f.y;f.tx=hm.x+fr.fx*o;f.ty=hm.y+fr.fy*o;f.t=0;f.step=true;f.thr=11+Math.random()*5;}});
+  if(S.chip==='drop'){S.chipT+=dt/.32;if(S.chipT>=1)S.chip='held';}
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);const n=S.n,mv=still?0:1;
+  ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.shadowColor='rgba(15,20,35,.24)';ctx.shadowBlur=7;ctx.shadowOffsetY=3;
+  const f1=frame(1),f2=frame(2),sw=Math.sin(S.phase)*(1-S.idle)*2.4*mv;
+  const p1={x:n[1].x+f1.px*sw,y:n[1].y+f1.py*sw},p2={x:n[2].x-f2.px*sw*1.2,y:n[2].y-f2.py*sw*1.2};
+  // tail
+  const tp=[p2];for(let i=3;i<n.length;i++){const a=n[i-1],c=n[i],dx=c.x-a.x,dy=c.y-a.y,l=Math.hypot(dx,dy)||1,k=i-2,o=Math.sin(S.tailPh-k*.7)*k*(.5+S.idle*1.5)*mv;tp.push({x:c.x+(-dy/l)*o,y:c.y+(dx/l)*o});}
+  for(let i=tp.length-1;i>0;i--){ctx.strokeStyle=i%2?DARK:FUR;ctx.lineWidth=13-i*.9;ctx.beginPath();ctx.moveTo(tp[i-1].x,tp[i-1].y);ctx.lineTo(tp[i].x,tp[i].y);ctx.stroke();}
+  // legs with a bent elbow
+  const L=10.5;
+  S.feet.forEach((f,i)=>{const fr=i<2?f1:f2,b=i<2?p1:p2,s=i%2?1:-1,jx=b.x+fr.px*s*8,jy=b.y+fr.py*s*8;
+    let dx=f.x-jx,dy=f.y-jy,d=Math.hypot(dx,dy)||1;const dd=Math.min(d,2*L-.5),hg=Math.sqrt(L*L-dd*dd/4)*1.5,mx=jx+dx/2,my=jy+dy/2,ux=-dy/d,uy=dx/d;
+    const dot=ux*fr.fx+uy*fr.fy,sg=(i<2?(dot<0?1:-1):(dot>0?1:-1)),ex=mx+ux*hg*sg,ey=my+uy*hg*sg;
+    ctx.strokeStyle=FUR;ctx.lineWidth=8;ctx.beginPath();ctx.moveTo(jx,jy);ctx.quadraticCurveTo(ex,ey,f.x,f.y);ctx.stroke();
+    ctx.fillStyle=DARK;ctx.beginPath();ctx.arc(f.x,f.y,f.step?5.4:4.6,0,7);ctx.fill();
+    for(let k=-1;k<=1;k++){ctx.beginPath();ctx.arc(f.x+fr.fx*4.4+fr.px*k*2.9,f.y+fr.fy*4.4+fr.py*k*2.9,1.5,0,7);ctx.fill();}});
+  // body
+  const bw=27+Math.sin(T*2.6)*(.5+S.idle*1.2)*mv+(1-S.stretch)*14;
+  ctx.strokeStyle=FUR;ctx.lineWidth=bw;ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
+  ctx.shadowColor='transparent';
+  ctx.strokeStyle='#757e8e';ctx.lineWidth=9;ctx.beginPath();ctx.moveTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.stroke();
+  // neckerchief, knot trailing loosely
+  const nx=(n[0].x+p1.x)/2,ny=(n[0].y+p1.y)/2,ka=Math.atan2(-f1.fy,-f1.fx)+Math.sin(S.tailPh*1.4)*.35*mv;
+  ctx.strokeStyle=RED;ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(nx+f1.px*11,ny+f1.py*11);ctx.lineTo(nx-f1.px*11,ny-f1.py*11);ctx.stroke();
+  ctx.fillStyle=RED;ctx.beginPath();ctx.moveTo(nx+f1.px*7,ny+f1.py*7);ctx.lineTo(nx-f1.px*7,ny-f1.py*7);ctx.lineTo(nx+Math.cos(ka)*14,ny+Math.sin(ka)*14);ctx.fill();
+  // head
+  const ha=Math.atan2(f1.fy,f1.fx)+S.headA*mv,sn=Math.sin(S.sniff*19)*1.2*S.sniff*mv,hx=n[0].x-f1.fx*10+Math.cos(ha)*10,hy=n[0].y-f1.fy*10+Math.sin(ha)*10;
+  ctx.shadowColor='rgba(15,20,35,.24)';
+  ctx.save();ctx.translate(hx,hy);ctx.rotate(ha);
+  ctx.fillStyle=FUR;[-1,1].forEach(s=>{ctx.beginPath();ctx.arc(-5,s*11,5.5*(s>0?1-S.ear*.35:1),0,7);ctx.fill();});
+  ctx.beginPath();ctx.ellipse(0,0,12.5,13,0,0,7);ctx.fill();
+  ctx.shadowColor='transparent';
+  ctx.fillStyle=DARK;[-1,1].forEach(s=>{ctx.beginPath();ctx.arc(-5,s*11,2.6*(s>0?1-S.ear*.35:1),0,7);ctx.fill();});
+  ctx.fillStyle=FUR;ctx.beginPath();ctx.ellipse(10+sn,0,9.5,7.2,0,0,7);ctx.fill();ctx.fillStyle='#dde1e4';ctx.beginPath();ctx.ellipse(10.5+sn,0,7,5,0,0,7);ctx.fill();
+  ctx.fillStyle='#b9c0cc';ctx.beginPath();ctx.moveTo(-9,0);ctx.lineTo(-1,-2.2);ctx.lineTo(2,0);ctx.lineTo(-1,2.2);ctx.fill();
+  ctx.fillStyle=DARK;[-1,1].forEach(s=>{ctx.beginPath();ctx.ellipse(3.6,s*6.8,5.4,5.6,s*.25,0,7);ctx.fill();});
+  if(mv&&T%3.7<.13){ctx.strokeStyle='#8a93a3';ctx.lineWidth=1.4;[-1,1].forEach(s=>{ctx.beginPath();ctx.moveTo(4.4,s*6.8-2.4);ctx.lineTo(4.4,s*6.8+2.4);ctx.stroke();});}
+  else{const ey=S.eye*1.1*mv;[-1,1].forEach(s=>{ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(4.4,s*6.8,3.4,0,7);ctx.fill();
+    ctx.fillStyle='#14161c';ctx.beginPath();ctx.arc(5.2,s*6.8+ey,2.1,0,7);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(6,s*6.8+ey-.8,.75,0,7);ctx.fill();});}
+  ctx.fillStyle='#14161c';ctx.beginPath();ctx.arc(16+sn,0,2.6,0,7);ctx.fill();
+  ctx.restore();
+  // stolen tab
+  if(S.chip){const mx=hx+Math.cos(ha)*19,my=hy+Math.sin(ha)*19;let x=mx,y=my;
+    if(S.chip==='drop'){const k=Math.min(1,S.chipT),e=k*k;x=S.chipFrom.x+(mx-S.chipFrom.x)*e;y=S.chipFrom.y+(my-S.chipFrom.y)*e;}
+    ctx.shadowColor='rgba(15,20,35,.24)';
+    ctx.fillStyle='#f8f9fb';ctx.strokeStyle='#aab1bd';ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(x-31,y-9,62,18,[6,6,0,0]);ctx.fill();ctx.shadowColor='transparent';ctx.stroke();
+    ctx.fillStyle='#d93a2f';ctx.beginPath();ctx.roundRect(x-25,y-5,10,10,2);ctx.fill();
+    ctx.fillStyle='#1c2230';ctx.font='500 10px "DM Sans",sans-serif';ctx.textBaseline='middle';ctx.fillText('YouTube',x-11,y+.5);}
+  ctx.shadowColor='transparent';
+}
+let last=0;function loop(ts){const dt=Math.min(.05,(ts-last)/1000||0);last=ts;T+=dt;tick(dt);draw();requestAnimationFrame(loop);}
+function buildTabs(){strip.innerHTML='';TABS.forEach(([n,col,on],i)=>{const t=document.createElement('div');t.className='tab'+(on?' active':'');if(n=='YouTube')t.id='target';
+  t.innerHTML=`<i style="background:${col}"></i><span>${n}</span>`;strip.append(t);});}
+function reset(){
+  size();buildTabs();bubble.hidden=true;toast.hidden=true;S.path=[];S.onArrive=null;S.reach=false;S.look=true;S.chip=null;kept=false;S.v=0;S.th=-Math.PI/2;S.stretchT=1;S.pause=0;
+  setChain(30,H*.4);
+  status.textContent='Pockets is halfway up the border, heading for the YouTube tab you have not opened in two days.';
+  go.disabled=false;busy=false;
+}
+function setCount(n){$('ringN').textContent=n;$('bTitle').textContent=`Mine in ${n}…`;$('ringFg').style.strokeDashoffset=100.5*(1-(n-1)/5);const s=document.querySelector('#target span');if(s)s.textContent=`Mine in ${n}…`;}
+$('keep').onclick=()=>{kept=true;};
+$('undo').onclick=()=>{$('toastTxt').textContent='YouTube is back on the bar.';$('undo').hidden=true;buildTabs();};
+go.onclick=async()=>{
+  if(busy)return;reset();busy=true;go.disabled=true;$('undo').hidden=false;$('toastTxt').textContent='Pockets took YouTube';
+  S.look=false;setChain(30,H+36);status.textContent='Pockets pokes its head in at the bottom and looks around.';
+  await travel([{x:30,y:H-6}],60,false);S.look=true;await wait(1200);S.look=false;
+  status.textContent='Pockets climbs the border.';const j=()=>30+(Math.random()-.4)*14;await travel([{x:j(),y:H*.72},{x:j(),y:H*.48},{x:j(),y:H*.27},{x:32,y:64}],165);
+  const t=$('target'),r=t.getBoundingClientRect(),p=page.getBoundingClientRect();
+  const tx=Math.max(60,Math.min(W-40,r.left+r.width/2-p.left));
+  status.textContent='Pockets crosses the top to get under the YouTube tab.';
+  await travel([{x:62,y:54},{x:(62+tx)/2,y:70+(Math.random()-.5)*12},{x:tx-32,y:66},{x:tx-5,y:50},{x:tx,y:24}],165);
+  S.reach=true;t.classList.add('hot');t.firstChild.outerHTML=faceSvg;
+  $('bSub').textContent='YouTube · not opened for 2 days';$('keep').hidden=false;$('ringFg').style.strokeDashoffset=0;
+  bubble.style.left=Math.max(12,Math.min(W-262,tx+34))+'px';bubble.hidden=false;
+  status.textContent='Pockets reaches for the tab. The warning card gives you five seconds to save it.';
+  for(let n=5;n>=1&&!kept;n--){setCount(n);for(let i=0;i<5&&!kept;i++)await wait(150);}
+  S.reach=false;
+  if(kept){
+    buildTabs();$('bTitle').textContent='Fine. Keep it.';$('bSub').textContent='Pockets will leave YouTube alone today.';$('keep').hidden=true;
+    status.textContent='You kept the tab. Pockets leaves empty-pawed.';await wait(1500);bubble.hidden=true;
+    await travel([{x:tx+34,y:76},{x:tx+6,y:150},{x:Math.max(50,tx-80),y:H+110}],150);
+  }else{
+    bubble.hidden=true;t.classList.add('gone');S.chipFrom={x:tx,y:-12};S.chipT=0;S.chip='drop';
+    status.textContent='The tab drops off the bar. Pockets grabs it and bolts.';await wait(380);t.remove();S.stretchT=.74;await wait(300);S.stretchT=1.12;
+    toast.hidden=false;
+    await travel([{x:tx+52,y:84},{x:tx+26,y:160},{x:Math.max(50,tx-90),y:H+130}],400);
+    await wait(2600);
+  }
+  await wait(600);reset();
+};
+addEventListener('resize',()=>{if(!busy)reset();});
+(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>{reset();requestAnimationFrame(loop);});
+</script>
