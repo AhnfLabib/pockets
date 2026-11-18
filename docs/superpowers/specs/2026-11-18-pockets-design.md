@@ -1,6 +1,6 @@
 # Pockets — design
 
-Status: draft for approval · 2026-11-18
+Status: awaiting owner approval · 2026-11-18
 
 ## What it is and why
 
@@ -125,7 +125,12 @@ Pockets takes **one tab per visit**.
 
 - After a visit for a stale tab, Pockets waits at least five minutes before
   the next one. The gap is a setting.
-- Distracting tabs in working mode skip the wait.
+- **At most four stale tabs are taken per hour** (owner's decision). The
+  number is a setting. A large pile, such as on the day of install or after
+  a weekend, clears over a day or two instead of in one long run of visits.
+- Distracting tabs in working mode skip the five-minute wait and do not
+  count toward the hourly cap. *(My call)* When several are open, Pockets
+  leaves 30 seconds between them.
 - *(My call)* Pockets only visits while a Chrome window is focused and the
   user is active. Nothing is taken while the user is away, because they
   would not see the warning.
@@ -158,7 +163,8 @@ Pockets takes **one tab per visit**.
 
 ### Settings page
 
-Stale time, gap between visits, countdown length, distracting list, never
+Stale time, gap between visits, stale tabs per hour, countdown length,
+distracting list, never
 take list, and the full taken list.
 
 ## Character
