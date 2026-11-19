@@ -24,6 +24,7 @@ await build({
   entryPoints: {
     background: join(root, 'src/background/index.ts'),
     content: join(root, 'src/content/index.ts'),
+    options: join(root, 'src/options/main.ts'),
   },
   outdir: dist,
   bundle: true,
@@ -34,6 +35,8 @@ await build({
 });
 
 await cp(join(root, 'extension'), dist, { recursive: true });
+await cp(join(root, 'src/options/options.html'), join(dist, 'options.html'));
+await cp(join(root, 'src/options/options.css'), join(dist, 'options.css'));
 if (await exists(join(root, 'assets'))) {
   await cp(join(root, 'assets'), join(dist, 'assets'), { recursive: true });
 }
