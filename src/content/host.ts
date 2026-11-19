@@ -81,7 +81,12 @@ export function startContent(env: HostEnv): ContentHandle {
   // Stage hosts left in the page by an orphaned instance (an older build whose context died) would sit over ours.
   for (const el of Array.from(doc.querySelectorAll('pockets-stage'))) el.remove();
 
-  if (env.typingUnknown) reportTyped();
+  // Unknown typing counts as typing seen in this document, so a back/forward-cache restore (which is not a new page
+  // load) re-reports it like real typing.
+  if (env.typingUnknown) {
+    typedSeen = true;
+    reportTyped();
+  }
 
   let stagePromise: Promise<Stage> | null = null;
   let stage: Stage | null = null;

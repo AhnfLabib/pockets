@@ -238,6 +238,18 @@ describe('content host: back/forward cache', () => {
     expect(second.play).toHaveBeenCalledTimes(1);
   });
 
+  it('an injected (typing unknown) top frame re-reports on a persisted pageshow, with no input since', async () => {
+    const top = topWin();
+    const { sendMessage } = setup({ typingUnknown: true }, top);
+    await flush();
+    expect(sent(sendMessage, 'pockets/typed')).toBe(1);
+    top.dispatchEvent(pageEvent('pagehide', true));
+    top.dispatchEvent(pageEvent('pageshow', true));
+    await flush();
+    expect(sent(sendMessage, 'pockets/typed')).toBe(2);
+    expect(sent(sendMessage, 'pockets/page-loaded')).toBe(0);
+  });
+
   it('a non-persisted pagehide (real unload) does not cancel', async () => {
     const top = topWin();
     const { call, stage } = setup({}, top);

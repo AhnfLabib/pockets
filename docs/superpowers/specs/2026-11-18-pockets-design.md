@@ -74,9 +74,11 @@ site, including subdomains.
 - The tab the user is looking at in each window, unless it is a distracting
   site in working mode.
 - *(My call)* Tabs where the user has typed into a form since the page
-  loaded, because closing them loses work. Tabs that cannot report this
-  (asleep, or open since before the extension was installed) are treated as
-  not typed in.
+  loaded, because closing them loses work. Tabs that were already open when
+  Pockets was installed or updated count as typed in until they next load a
+  page, since their earlier typing is unknown. A page restored from the
+  back/forward cache keeps the protection it had. Asleep (discarded) tabs,
+  which cannot report anything, are treated as not typed in.
 - *(My call)* Sites on a "never take" list in settings, empty by default.
 - Tabs in windows the extension cannot see (incognito unless the user
   enables it).
