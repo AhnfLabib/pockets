@@ -13,7 +13,7 @@ const build = buildStamp();
 const alive = contextProbe(chrome.runtime);
 let handle: { dispose(): void } | null = null;
 
-if (alive() && claim(g, CONTENT_KEY, { build, alive, dispose: () => handle?.dispose() })) {
+if (alive() && claim(g, CONTENT_KEY, { build, alive, doc: document, dispose: () => handle?.dispose() })) {
   handle = startContent({
     win: window,
     doc: document,
@@ -25,6 +25,6 @@ if (alive() && claim(g, CONTENT_KEY, { build, alive, dispose: () => handle?.disp
     // content-start.js leaves a live record of this build at document_start, right before it sends page-loaded.
     // Without one, this document's start was never seen (injected into a tab open before install or update), so its
     // typing is unknown and the tab counts as typed in until it next loads a page. Only the top frame acts on it.
-    typingUnknown: !isLive(g[START_KEY], build),
+    typingUnknown: !isLive(g[START_KEY], build, document),
   });
 }

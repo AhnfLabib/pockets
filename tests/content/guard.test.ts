@@ -85,4 +85,15 @@ describe('content guard', () => {
     expect(dispose).not.toHaveBeenCalled();
     expect(g.k).toBe(rec);
   });
+
+  it('a live same-build record from another document (a replaced initial about:blank) does not block a new start', () => {
+    const blank = {};
+    const real = {};
+    const g: Record<string, unknown> = {};
+    expect(claim(g, CONTENT_KEY, { build: 'b', alive: () => true, doc: blank })).toBe(true);
+    expect(claim(g, CONTENT_KEY, { build: 'b', alive: () => true, doc: real })).toBe(true);
+    expect(claim(g, CONTENT_KEY, { build: 'b', alive: () => true, doc: real })).toBe(false);
+    expect(isLive(g[CONTENT_KEY], 'b', blank)).toBe(false);
+    expect(isLive(g[CONTENT_KEY], 'b', real)).toBe(true);
+  });
 });

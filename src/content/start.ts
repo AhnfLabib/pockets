@@ -12,7 +12,7 @@ import { START_KEY, contextProbe, type GuardRecord } from './guard';
 import { buildStamp } from './stamp';
 
 const g = globalThis as unknown as Record<string, unknown>;
-const rec: GuardRecord = { build: buildStamp(), alive: contextProbe(chrome.runtime) };
+const rec: GuardRecord = { build: buildStamp(), alive: contextProbe(chrome.runtime), doc: document };
 g[START_KEY] = rec;
 try {
   void chrome.runtime.sendMessage({ type: 'pockets/page-loaded' }).catch(() => {});

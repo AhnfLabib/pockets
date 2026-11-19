@@ -18,16 +18,20 @@ export interface GuardRecord {
   alive(): boolean;
   /** Tears the owner down. Called when a new instance replaces a dead one. */
   dispose?(): void;
+  /** The document the owner started in. Chromium can keep a frame's window (and so, possibly, this world's globals)
+   *  when an initial about:blank is replaced by a same-origin document; a record from another document is not ours. */
+  doc?: unknown;
 }
 
 type Slots = Record<string, unknown>;
 
-/** A record left by a live instance of this same build. Anything else (missing, malformed, other build, dead
- *  context, or alive() throwing) is not live. */
-export function isLive(rec: unknown, build: string): boolean {
+/** A record left by a live instance of this same build, in this same document (when `doc` is given). Anything else
+ *  (missing, malformed, other build, other document, dead context, or alive() throwing) is not live. */
+export function isLive(rec: unknown, build: string, doc?: unknown): boolean {
   if (!rec || typeof rec !== 'object') return false;
   const r = rec as Partial<GuardRecord>;
   if (r.build !== build || typeof r.alive !== 'function') return false;
+  if (doc !== undefined && r.doc !== doc) return false;
   try {
     return r.alive() === true;
   } catch {
@@ -41,7 +45,7 @@ export function isLive(rec: unknown, build: string): boolean {
  */
 export function claim(g: Slots, key: string, mine: GuardRecord): boolean {
   const prev = g[key];
-  if (isLive(prev, mine.build)) return false;
+  if (isLive(prev, mine.build, mine.doc)) return false;
   if (prev && typeof prev === 'object' && typeof (prev as GuardRecord).dispose === 'function') {
     try { (prev as GuardRecord).dispose!(); } catch { /* the old instance is already broken */ }
   }

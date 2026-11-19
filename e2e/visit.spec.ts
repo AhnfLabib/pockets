@@ -652,3 +652,37 @@ bfTest('bfcache: typing on a page, leaving it and coming Back from the cache pro
   await sleep(1000);
   expect((await runtime(worker))?.typedIn ?? []).toContain(tab.id);
 });
+
+test('same-origin frame and popup: content.js that ran in the initial about:blank does not block the real document', async ({ context, worker, server }) => {
+  // Chromium keeps the Window (and maybe the isolated world's globals) when an initial about:blank is replaced by a
+  // same-origin document. With match_about_blank, content.js may have run in that blank document first; the guard
+  // must not then make the real document's content.js a no-op.
+  serve(server, '/so-form', page('so form', '<input id="field" type="text">'));
+  const hostUrl = serve(server, '/so-host', page('so host', '<iframe src="/so-form" style="width:300px;height:120px"></iframe>'));
+  const p = await open(context, hostUrl, context.pages()[0]);
+  await expect.poll(() => p.frames().length).toBe(2);
+  const host = await tabFor(worker, hostUrl);
+  await contentReady(worker, host.id);
+  const field = p.frameLocator('iframe').locator('#field');
+  await expect.poll(async () => {
+    await field.pressSequentially('a', { delay: 10 });
+    return (await runtime(worker))?.typedIn ?? [];
+  }, { message: 'typing in a same-origin frame was reported', timeout: 15_000, intervals: [300] }).toContain(host.id);
+
+  // A same-origin popup whose response is held, so its initial about:blank document is around first.
+  server.route('/so-popup', (_req, res) => {
+    setTimeout(() => {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(page('so popup', '<input id="field" type="text">'));
+    }, 1200);
+  });
+  const popupUrl = server.origin + '/so-popup';
+  const [popup] = await Promise.all([context.waitForEvent('page'), p.evaluate((u) => { window.open(u, '_blank'); }, popupUrl)]);
+  await popup.waitForLoadState('load');
+  expect(popup.url()).toBe(popupUrl);
+  const pop = await tabFor(worker, popupUrl);
+  await contentReady(worker, pop.id);
+  expect((await runtime(worker))?.typedIn ?? [], 'a freshly loaded popup is not typed in').not.toContain(pop.id);
+  await popup.locator('#field').pressSequentially('hello', { delay: 20 });
+  await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'typing in the popup was reported' }).toContain(pop.id);
+});
