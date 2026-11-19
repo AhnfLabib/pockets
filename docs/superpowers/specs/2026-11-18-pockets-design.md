@@ -122,6 +122,48 @@ Pockets takes **one tab per visit**.
    - *(My call)* The user switches to a **distracting** target during the
      countdown: it is not saved. The visit carries on with that page as the
      stage, and the card shows the time remaining.
+   - The user leaves the stage some other way during the visit (from the
+     climb until the take): see "Leaving during a visit" below.
+
+### Leaving during a visit
+
+*(Owner's decision, release B; replaces "switching away cancels the
+visit".)* "In front" means the stage is the active tab of a focused normal
+browser window. If the stage stops being in front during a visit, including
+during the climb, Pockets **pauses**: he leaves the stage page, the target's
+tab-bar countdown stops, and the toolbar badge shows "!".
+
+- **Another tab inside the browser** (a browser window is still focused,
+  but the stage is not its active tab, or another browser window is
+  focused): nothing is taken while paused this way. Coming back to the
+  stage resumes the visit: Pockets is back under the tab, the countdown
+  starts again from its full length, and the card has to be on screen again
+  before anything is taken. Not back within five minutes: the visit ends
+  quietly, nothing is closed, and for a stale visit the gap starts.
+- **Away from the browser** (no browser window focused because another app
+  is in front, or the stage's window is minimised): as above, and a system
+  notification fires once for that period away: "Pockets has his eye on
+  “<title>”. Come back within 5 minutes to keep this tab, otherwise he'll
+  steal it." Clicking it brings the stage back to the front, which resumes
+  the visit. If five minutes after the notification was shown no browser
+  window is focused, Pockets takes the tab without the card; the
+  notification was the warning. This counts even if the user is idle or
+  away from the computer. A second notification follows: "Pockets stole
+  “<title>”. He ran off with it. Undo brings it back.", with an **Undo**
+  button that works like the notice's. The take is recorded and paced like
+  any other.
+  - At the five-minute mark a browser window is focused but the stage is
+    not in front: nothing is taken, the visit ends quietly.
+  - The notification could not be created (no permission, an error): never
+    taken while away; treated as a tab switch.
+  - The user clicked the notification: never taken while away for that
+    pause, even if the browser did not come to the front.
+  - Each period away has its own notification and five minutes: after a
+    resume, leaving again warns again.
+- Switching working mode off during a paused distracting visit still ends
+  it. Opening the target itself keeps the rules above (stale: Keep;
+  distracting: replayed with it as the stage).
+- A browser restart ends a paused visit; nothing is taken.
 
 ### Pacing
 
@@ -133,19 +175,37 @@ Pockets takes **one tab per visit**.
 - Distracting tabs in working mode skip the five-minute wait and do not
   count toward the hourly cap. *(My call)* When several are open, Pockets
   leaves 30 seconds between them.
-- *(My call)* Pockets only visits while a Chrome window is focused and the
-  user is active. Nothing is taken while the user is away, because they
-  would not see the warning.
+- *(My call)* Pockets only **starts** a visit while a Chrome window is
+  focused and the user is active. A visit the user walks away from is
+  handled by "Leaving during a visit": the only take while the user is away
+  is the one announced by a system notification five minutes earlier.
 - *(My call)* Only one visit runs at a time across all windows.
 
 ### When the full show is not possible
 
 - **The stage cannot run extensions** (new tab page, browser settings, the
   Web Store, PDF viewer): *(my call)* no visit. Pockets waits and tries
-  again when the user is on a page it can draw on. **No tab is ever closed
-  unless the warning card was shown on screen**; this follows directly from
-  the first anti-goal. If a distracting site is the page being looked at,
-  the stage is that page, so this case does not arise for it.
+  again when the user is on a page it can draw on. If a distracting site is
+  the page being looked at, the stage is that page, so this case does not
+  arise for it.
+- **The safety rule** (owner's decision, release B; replaces "no tab is
+  ever closed unless the warning card was shown on screen"). A tab is closed
+  only if either
+  1. its warning card was confirmed visible on screen at the moment of
+     taking, or
+  2. the user was away from the browser, a system notification about this
+     exact visit and target was created at least five minutes earlier (and
+     not clicked), and no browser window is focused at the moment of
+     taking.
+
+  Every other closing safeguard holds on both paths: the target is re-read
+  immediately before closing (same address, not pinned, not typed into, not
+  about to navigate away), it is never the only tab in its window, only the
+  visit's own target is ever closed, and only one visit runs at a time. The
+  "never taken" rules apply on both paths. If notifications are silenced by
+  the operating system (Do Not Disturb, Focus), the browser still reports
+  them as shown, so path 2 can take a tab whose warning the user did not
+  see; Undo in the popup remains.
 - **The target cannot run extensions or is asleep** (Chrome's memory saver
   discards background tabs): the climb and card play on the stage, but the
   target's icon and title cannot change. This may be frequent for stale
@@ -285,8 +345,8 @@ The owner handed over the technical choices.
   return plain data, so they are unit-tested without a browser.
 - **Stale time** comes from the browser's own last-accessed time for each
   tab.
-- **Permissions:** tabs, storage, alarms, idle, sessions, scripting, and
-  access to all sites. Access to all sites is required to draw on whatever
+- **Permissions:** tabs, storage, alarms, idle, sessions, scripting,
+  notifications, and access to all sites. Access to all sites is required to draw on whatever
   page the user is on. It triggers a longer Web Store review and a strong
   install warning; this is a cost of the concept.
 - **Privacy:** nothing leaves the machine. No network requests, no

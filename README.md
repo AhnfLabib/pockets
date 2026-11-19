@@ -10,9 +10,15 @@ nothing, the tab is gone and Pockets bolts off the bottom of the screen with it.
 - **Distracting tabs, while you are working.** Switch working mode on from the toolbar button, and tabs on your
   distracting list (YouTube, Reddit, X and friends, editable) are taken however recently you used them.
 - **One tab per visit,** at most four stale tabs an hour, with at least five minutes between visits.
-- **Never without warning.** No tab is closed unless the warning card was on screen. **Keep this tab** sends
-  Pockets away empty-handed. **Undo** on the notice puts a taken tab back where it was, with its history. The popup
-  and the settings page list everything Pockets has taken, with a button to reopen each.
+- **Never without warning.** A tab is closed only if its warning card was on screen at that moment, or, when you
+  left the browser during a visit, a system notification warned you five minutes earlier (see below). **Keep this
+  tab** sends Pockets away empty-handed. **Undo** on the notice puts a taken tab back where it was, with its history.
+  The popup and the settings page list everything Pockets has taken, with a button to reopen each.
+- **Leaving during a visit.** Switch to another tab and Pockets waits (the toolbar badge shows **!**): come back
+  and the countdown starts again from the top, with the card back on screen; stay away five minutes and he gives up.
+  Leave the browser altogether (another app in front, or the window minimised) and a system notification says
+  "Pockets has his eye on …": come back within five minutes, or click the notification, to keep the tab. Otherwise
+  he takes it without the card, even if you are away from the computer, and a second notification offers **Undo**.
 - **Never taken:** pinned tabs, the tab you are looking at (unless it is distracting and you are working), tabs
   playing sound (stale rule only), tabs you have typed into, and sites on your "never take" list.
 
@@ -41,7 +47,9 @@ POCKETS_TEST=1 npm run build
 npm run e2e -- --trace off
 ```
 
-A normal `npm run build` leaves the hook out entirely (`grep -r "pockets/test-set" dist` finds nothing), so always
+The same hook can shorten the five-minute pause grace period and stand in for "no browser window is focused", which
+headless Chromium cannot produce, and the test build exposes the notification handlers so a test can press Undo.
+A normal `npm run build` leaves all of it out (`grep -rE "pockets/test-set|__pockets|pocketsTest" dist` finds nothing), so always
 run a normal build before loading or packaging the extension. `POCKETS_HEADED=1` runs the browser with a window
 (under `xvfb-run -a` on a machine with no display).
 
@@ -92,7 +100,8 @@ project folder.
 | `tabs` | To see each tab's address, title, icon, pinned and audio state, and when it was last opened, which is what makes a tab stale. And to close the tab Pockets takes. |
 | `storage` | To keep your settings, whether working mode is on, and the list of taken tabs, in Chrome's local extension storage on this computer. |
 | `alarms` | To wake Pockets once a minute to check whether a visit is due. Chrome's extension background stops when idle, so a timer alone would not survive. |
-| `idle` | To visit only while you are at the computer. Nothing is taken while you are away, because you would not see the warning. |
+| `idle` | To start a visit only while you are at the computer. (A visit you walk away from is handled by the notification below, not by `idle`.) |
+| `notifications` | To warn you before taking a tab while you are away from the browser, and to offer Undo afterwards. |
 | `sessions` | For **Undo** and **Reopen**: restoring a taken tab through Chrome's recently-closed list brings it back in its old place with its back and forward history. |
 | `scripting` | When Pockets is installed or updated, tabs that are already open have none of its page code (Chrome only adds declared content scripts to pages that load afterwards). Pockets adds it to those open web pages once, so they can show Pockets without being reloaded. |
 | All sites (`<all_urls>`) | Pockets is drawn on top of whatever page you are looking at, the countdown is shown on the target tab's own title and icon, and each page reports whether you have typed into it. That needs Pockets' content script on every site. |
@@ -105,6 +114,12 @@ for the extension. Typing is only noticed as "this tab has been typed into"; wha
 Uninstalling Pockets removes all of it.
 
 ## Known limitations
+
+- **Notifications must be allowed.** On macOS, allow notifications for your browser in System Settings →
+  Notifications, or the away warning cannot appear. If Chrome cannot show the notification at all, Pockets never
+  takes a tab while you are away (the visit ends quietly after five minutes). But if notifications are silenced by
+  the operating system or by Focus / Do Not Disturb, the browser still reports them as shown, so a tab can be taken
+  without you seeing the warning. Undo in the popup still brings it back.
 
 - **Sleeping tabs cannot show the face or the countdown on the tab bar.** Chrome's Memory Saver puts background
   tabs to sleep, and a sleeping tab runs no page code. Pockets still warns with the card on the page you are

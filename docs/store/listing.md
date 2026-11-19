@@ -34,8 +34,8 @@ WHAT POCKETS NEVER TAKES
 
 HE ISN'T A NUISANCE
 • At most four forgotten tabs an hour, at least five minutes apart.
-• Only while you are actually at the computer.
-• If you switch away during the countdown, he backs off.
+• He only starts a visit while you are actually at the computer.
+• Switch to another tab during the countdown and he waits; come back and the countdown starts again. Leave the browser and a notification gives you five minutes to come back, or he takes the tab anyway (Undo brings it back).
 
 YOU'RE IN CHARGE
 Change how long before a tab counts as forgotten, how often he visits, the countdown, and both site lists in the settings.
@@ -59,7 +59,8 @@ Pockets closes tabs the user has not used for a while, and distracting tabs whil
 - **tabs:** Reads the open tabs' addresses, titles, pinned and audio state and last-used time to choose which tab to take, and closes that tab.
 - **storage:** Keeps the user's settings and the list of taken tabs (for reopening) in local extension storage on the user's computer.
 - **alarms:** Checks once a minute whether a tab is due to be taken.
-- **idle:** Visits only while the user is active, so the warning is never shown to an empty room.
+- **idle:** Starts a visit only while the user is active, so the warning card is not shown to an empty room.
+- **notifications:** If the user leaves the browser during a visit, a system notification warns them that the tab will be taken in five minutes unless they come back; after such a take, a second notification offers Undo. No other notifications are shown.
 - **sessions:** Reopens a taken tab in its original position with its history when the user presses Undo.
 - **scripting:** Adds the extension's content script to tabs that were already open when the extension was installed or updated, so they can show the warning without being reloaded.
 - **Host permission (all sites):** The warning animation and countdown card are drawn on whatever page the user is viewing, which can be any site. The same script notices when the user types into a form, so that tab is protected from being closed. No page content is read beyond whether typing occurred, and nothing is sent anywhere.

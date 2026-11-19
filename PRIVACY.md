@@ -14,7 +14,7 @@ To decide which tab to take, Pockets reads information your browser already has 
 
 To avoid closing a tab with unsaved work, Pockets notices whether you have typed into a form on a page. It records only that typing happened in that tab. It never reads, records or stores what you typed.
 
-To visit only while you are at the computer, Pockets asks your browser whether you have been active in the last minute. It does not record your activity.
+To start a visit only while you are at the computer, Pockets asks your browser whether you have been active in the last minute. It does not record your activity. To know whether you left the browser during a visit, it asks your browser whether any of its windows is in front; it does not record this either.
 
 ## What Pockets stores
 
@@ -39,6 +39,7 @@ Pockets makes no network requests. The only files it loads are its own drawings,
 - **Idle:** to visit only while you are using the computer.
 - **Sessions:** to reopen a taken tab in its original place, with its history, when you press Undo.
 - **Scripting:** to add Pockets to tabs that were already open when it was installed, so they work without reloading.
+- **Notifications:** to warn you before taking a tab while you are away from the browser, and to offer Undo afterwards. The notifications are shown by your own browser and computer; nothing is sent anywhere.
 
 ## Children
 
