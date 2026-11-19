@@ -10,6 +10,7 @@ export function pickTarget(
   if (rt.working) {
     const distracting = candidates
       .filter((t) => !t.pinned
+        && !rt.typedIn.includes(t.id)
         && matchesSite(t.url, s.distracting)
         && rt.spared[t.id]?.workingSince !== rt.workingSince)
       .sort((a, b) => a.lastAccessed - b.lastAccessed);
@@ -21,6 +22,7 @@ export function pickTarget(
     .filter((t) => !t.pinned && !t.audible && !t.active
       && !rt.typedIn.includes(t.id)
       && !((rt.spared[t.id]?.until ?? 0) > now)
+      && !(rt.working && rt.spared[t.id]?.workingSince === rt.workingSince)
       && now - t.lastAccessed > staleMs)
     .sort((a, b) => a.lastAccessed - b.lastAccessed);
   return stale.length > 0 ? { tab: stale[0], reason: 'stale' } : null;

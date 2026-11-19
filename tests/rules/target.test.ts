@@ -78,7 +78,9 @@ describe('pickTarget: distracting rule', () => {
   it('working: ahead of an older stale tab', () => {
     const stale = tab({ lastAccessed: now - 100 * H });
     const t = yt();
-    expect(pickTarget([stale, t], 1, s, work(), now)?.tab).toBe(t);
+    const r = pickTarget([stale, t], 1, s, work(), now);
+    expect(r?.tab).toBe(t);
+    expect(r?.reason).toBe('distracting');
   });
   it('working: picked even when active', () => {
     const t = yt({ active: true });
@@ -101,5 +103,18 @@ describe('pickTarget: distracting rule', () => {
   it('working: picked again when the spare is from an older working session', () => {
     const t = yt();
     expect(pickTarget([t], 1, s, work({ spared: { [t.id]: { workingSince: 100 } } }), now)?.tab).toBe(t);
+  });
+  it('working: a typed-in youtube tab is not picked', () => {
+    const t = yt();
+    expect(pickTarget([t], 1, s, work({ typedIn: [t.id] }), now)).toBeNull();
+  });
+  it('working: a spared (this session) youtube tab 25h old is not picked as stale either', () => {
+    const t = yt({ lastAccessed: now - 25 * H });
+    expect(pickTarget([t], 1, s, work({ spared: { [t.id]: { workingSince: 500 } } }), now)).toBeNull();
+  });
+  it('not working: the same 25h-old youtube tab is picked as stale', () => {
+    const t = yt({ lastAccessed: now - 25 * H });
+    expect(pickTarget([t], 1, s, rt({ spared: { [t.id]: { workingSince: 500 } }, workingSince: 500 }), now))
+      .toEqual({ tab: t, reason: 'stale' });
   });
 });
