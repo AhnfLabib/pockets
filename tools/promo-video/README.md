@@ -52,7 +52,7 @@ node capture/popup.mjs
 ```
 
 Outputs: `out/pockets-promo-landscape.mp4` and `out/pockets-promo-portrait.mp4`, H.264 (CRF 18, yuv420p) and AAC,
-exactly 30 s. The music is the promo-video skill's "Motivational Day" (Pixabay), at volume 0.10 with a 2 s fade-in
+exactly 30 s. The music is the promo-video skill's "Motivational Day" (Pixabay), at volume 0.30 with a 2 s fade-in
 and a 3 s fade-out; `MUSIC=/path/to/track.mp3 ./render.sh` uses another file.
 
 Other tools: `npx remotion studio` previews the compositions; `node capture/capture.mjs --scan 1-20` plays seeds
