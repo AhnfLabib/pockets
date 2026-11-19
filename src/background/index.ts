@@ -2,14 +2,22 @@
 // Listeners are registered synchronously at top level, and onWake is queued before anything else,
 // so an event that woke the worker is always handled after a leftover visit has been cancelled.
 import { Visits } from './visit';
-import { Store, forgetTab } from './store';
+import { Store, forgetTab, setWorking } from './store';
 import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
 import type { ToBackground } from '../shared/types';
 
 const ALARM = 'pockets-tick';
 
-const visits = new Visits(chromeBrowser, new Store(chromeKV), () => Date.now(), () => crypto.randomUUID());
+const store = new Store(chromeKV);
+const visits = new Visits(chromeBrowser, store, () => Date.now(), () => crypto.randomUUID());
+
+/** Working mode shows on the toolbar icon as a small red badge. */
+function paintBadge(working: boolean): void {
+  void chrome.action.setBadgeText({ text: working ? ' ' : '' }).catch(() => {});
+  if (working) void chrome.action.setBadgeBackgroundColor({ color: '#d9483b' }).catch(() => {});
+}
+void store.runtime().then((rt) => paintBadge(rt.working)).catch(() => {});
 
 // Worker start: a stored visit belongs to a dead worker. Cancel and unmark it; close nothing.
 void visits.onWake();
@@ -52,6 +60,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Any frame of the tab may report typing.
       if (tabId !== undefined) {
         void visits.updateRuntime((rt) => (rt.typedIn.includes(tabId) ? rt : { ...rt, typedIn: [...rt.typedIn, tabId] }));
+      }
+      break;
+    case 'pockets/set-working':
+      if (typeof m.on === 'boolean') {
+        const on = m.on;
+        void visits.updateRuntime((rt) => setWorking(rt, on, Date.now())).then(() => paintBadge(on)).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+        return true;
       }
       break;
     case 'pockets/undo':

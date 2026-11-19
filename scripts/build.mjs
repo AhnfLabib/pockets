@@ -25,6 +25,7 @@ await build({
     background: join(root, 'src/background/index.ts'),
     content: join(root, 'src/content/index.ts'),
     options: join(root, 'src/options/main.ts'),
+    popup: join(root, 'src/popup/main.ts'),
   },
   outdir: dist,
   bundle: true,
@@ -37,6 +38,8 @@ await build({
 await cp(join(root, 'extension'), dist, { recursive: true });
 await cp(join(root, 'src/options/options.html'), join(dist, 'options.html'));
 await cp(join(root, 'src/options/options.css'), join(dist, 'options.css'));
+await cp(join(root, 'src/popup/popup.html'), join(dist, 'popup.html'));
+await cp(join(root, 'src/popup/popup.css'), join(dist, 'popup.css'));
 if (await exists(join(root, 'assets'))) {
   await cp(join(root, 'assets'), join(dist, 'assets'), { recursive: true });
 }
