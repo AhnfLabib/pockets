@@ -167,6 +167,15 @@ test('strict page CSP: the stage mounts from the background-served data URLs and
   test.info().annotations.push({ type: 'finding', description: `strict CSP: favIconUrl ${fav === icon ? 'is the mark icon' : `"${fav.slice(0, 40)}"`}; ` +
     `logged: ${errors.map((e) => e.slice(0, 120)).join(' | ') || 'nothing'}` });
   expect(fav, 'the CSP refuses the data: tab icon (recorded behaviour)').not.toBe(icon);
+  // After the refusal the mark stops swapping the icon for this page: later ticks are title-only and log nothing more.
+  expect(await page.evaluate(() => document.querySelectorAll('link[rel~="icon"]').length), 'our refused icon taken out').toBe(0);
+  for (const n of [2, 1]) {
+    expect(await toTab(worker, tabId, { type: 'pockets/mark', remaining: n, icon })).toEqual({ ok: true });
+    expect(await page.title()).toBe(`Mine in ${n}…`);
+  }
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => document.querySelectorAll('link[rel~="icon"]').length)).toBe(0);
+  expect(errors.length, 'the refused icon is logged once, not once per tick').toBeLessThanOrEqual(1);
   expect(errors.filter((e) => !/Loading the image 'data:image\/png;base64,.*Content Security Policy directive/s.test(e)), 'nothing logged but the refused icon')
     .toEqual([]);
 });
