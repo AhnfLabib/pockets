@@ -2,7 +2,7 @@
 //
 // Safety rules enforced here (see the design's "A visit" and the plan's Global Constraints):
 //   - A tab is closed only after the visit's own stage reported `card-shown` (persisted as rt.visit.cardShown).
-//   - At take, the target is re-read: gone, a different URL, another window or pinned means close nothing.
+//   - At take, the target is re-read: gone, a different URL, another window, pinned or typed into means close nothing.
 //   - Only rt.visit.targetTabId is ever passed to removeTab.
 //   - One visit at a time; only tabs in the focused window are candidates.
 //   - A stored visit found on wake, or one silent for 60 s, is cancelled and unmarked; nothing is closed.
@@ -183,7 +183,7 @@ export class Visits {
       }
       case 'take': {
         if (v.cardShown !== true) { await this.abandon(rt, v); return; }
-        if (!(await this.targetStillValid(v))) { await this.abandon(rt, v); return; }
+        if (!(await this.targetStillValid(rt, v))) { await this.abandon(rt, v); return; }
         if (v.targetTabId !== v.stageTabId) { await this.finishTake(rt, v); return; }
         // The target is the stage: let the grab play, then close on `done` or after 800 ms, whichever is first.
         if (!memo) { await this.abandon(rt, v); return; } // state we cannot account for: close nothing
@@ -204,12 +204,13 @@ export class Visits {
     const rt = await this.store.runtime();
     const v = rt.visit;
     if (!v || v.visitId !== visitId || !this.memoFor(v)?.takePending) return;
-    if (v.cardShown !== true || !(await this.targetStillValid(v))) { await this.abandon(rt, v); return; }
+    if (v.cardShown !== true || !(await this.targetStillValid(rt, v))) { await this.abandon(rt, v); return; }
     await this.finishTake(rt, v);
   }
 
-  /** Re-read the target: it must still exist with the same URL, in the same window, unpinned. */
-  private async targetStillValid(v: ActiveVisit): Promise<boolean> {
+  /** Re-read the target: it must still exist with the same URL, in the same window, unpinned, and not typed into. */
+  private async targetStillValid(rt: RuntimeState, v: ActiveVisit): Promise<boolean> {
+    if (rt.typedIn.includes(v.targetTabId)) return false; // typed into during the visit: closing would lose work
     const t = await this.browser.getTab(v.targetTabId);
     if (!t || t.id !== v.targetTabId || t.url !== v.targetUrl || t.pinned) return false;
     const memo = this.memoFor(v);

@@ -4,6 +4,7 @@ import type { TabInfo, ToContent } from '../shared/types';
 import type { Browser } from './visit';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const SEND_TIMEOUT_MS = 10_000;
 
 function toTabInfo(t: chrome.tabs.Tab): TabInfo | null {
   if (t.id === undefined || t.id === chrome.tabs.TAB_ID_NONE) return null;
@@ -43,7 +44,11 @@ export const chromeBrowser: Browser = {
   /** True only when the top frame's content script answered `{ ok: true }`. */
   async send(tabId: number, msg: ToContent) {
     try {
-      const res: unknown = await chrome.tabs.sendMessage(tabId, msg, { frameId: 0 });
+      // A reply that never comes must not hold the visit queue: give up after SEND_TIMEOUT_MS (treated as cannot receive).
+      const res: unknown = await Promise.race([
+        chrome.tabs.sendMessage(tabId, msg, { frameId: 0 }),
+        sleep(SEND_TIMEOUT_MS).then(() => undefined),
+      ]);
       return typeof res === 'object' && res !== null && (res as { ok?: unknown }).ok === true;
     } catch {
       return false;

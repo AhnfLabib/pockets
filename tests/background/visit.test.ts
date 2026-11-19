@@ -25,6 +25,7 @@ class FakeBrowser implements Browser {
   sessionId: string | undefined = 'sess-1';
   sessionUrls: (string | undefined)[] = [];
   restoreOk = true;
+  removeThrows = false;
   restored: string[] = [];
   opened: string[] = [];
 
@@ -40,6 +41,7 @@ class FakeBrowser implements Browser {
   }
   async getTab(id: number) { const t = this.tabs.get(id); return t ? { ...t } : null; }
   async removeTab(id: number) {
+    if (this.removeThrows) throw new Error('No tab with id');
     const t = this.tabs.get(id);
     this.removed.push(id);
     this.tabs.delete(id);
@@ -247,6 +249,19 @@ describe('Visits: keep', () => {
   });
 });
 
+describe('Visits: close failure', () => {
+  it('if removeTab throws, nothing is recorded and nothing is counted', async () => {
+    const id = await startShown();
+    b.removeThrows = true;
+    await v.onEvent(1, id, { type: 'take' });
+    expect(await store.taken()).toEqual([]);
+    const r = await rt();
+    expect(r.staleTakes).toEqual([]);
+    expect(r.visit).toBeNull();
+    expect(b.to(1, 'pockets/notice')).toEqual([]);
+  });
+});
+
 describe('Visits: asleep target', () => {
   it('a failed mark is not fatal: the tab is still taken on take', async () => {
     b.cannotReceive.add(2);
@@ -387,6 +402,15 @@ describe('Visits: the user switches to the target mid-countdown', () => {
   });
 
   describe('a distracting target', () => {
+    it('kept: spared until working mode is next switched on', async () => {
+      const id = await startShown();
+      await v.onEvent(1, id, { type: 'keep' });
+      expect(b.removed).toEqual([]);
+      const r = await rt();
+      expect(r.spared[4]).toEqual({ workingSince: T0 - HOUR });
+      expect(r.visit).toBeNull();
+    });
+
     beforeEach(async () => {
       await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
       b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', lastAccessed: T0 - 60_000 });
@@ -486,6 +510,29 @@ describe('Visits: target is the stage', () => {
     expect(b.removed).toEqual([4]);
     await v.onEvent(4, id, { type: 'done' });
     expect(b.removed).toEqual([4]);
+  });
+
+  it('a stage-target typed into during the countdown is not removed', async () => {
+    await v.tick();
+    const id = await visitId();
+    await v.onEvent(4, id, { type: 'card-shown' });
+    await v.updateRuntime((r) => ({ ...r, typedIn: [...r.typedIn, 4] }));
+    await v.onEvent(4, id, { type: 'take' });
+    await v.onEvent(4, id, { type: 'done' });
+    for (const t of timers) t.fn();
+    await v.idle();
+    expect(b.removed).toEqual([]);
+    expect((await rt()).visit).toBeNull();
+  });
+
+  it('typed into between take and done: not removed', async () => {
+    await v.tick();
+    const id = await visitId();
+    await v.onEvent(4, id, { type: 'card-shown' });
+    await v.onEvent(4, id, { type: 'take' });
+    await v.updateRuntime((r) => ({ ...r, typedIn: [...r.typedIn, 4] }));
+    await v.onEvent(4, id, { type: 'done' });
+    expect(b.removed).toEqual([]);
   });
 
   it('a stage-target that navigated between take and done is not removed', async () => {
