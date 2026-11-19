@@ -241,3 +241,60 @@ describe('drawPose legs out of reach', () => {
     expect(endY).toBeCloseTo(foot.y, 6);
   });
 });
+
+describe('drawPose carried tab', () => {
+  /** Head pivot (hx, hy) and angle ha from the head sprite's translate/rotate. */
+  function headFrame(calls: Call[]): { hx: number; hy: number; ha: number } {
+    const i = calls.findIndex((c) => c.op === 'drawImage' && partOf(c) === 'head');
+    const before = calls.slice(0, i).reverse();
+    const [hx, hy] = before.find((c) => c.op === 'translate')!.args as number[];
+    const ha = before.find((c) => c.op === 'rotate')!.args[0] as number;
+    return { hx, hy, ha };
+  }
+
+  /** The tab's frame: the last translate/rotate before the tab's roundRect (the one with [6, 6, 0, 0]). */
+  function tabFrame(calls: Call[]): { at: number[]; rot: number; rect: number[] } {
+    const i = calls.findIndex((c) => c.op === 'roundRect' && Array.isArray(c.args[4]));
+    const before = calls.slice(0, i).reverse();
+    return {
+      at: before.find((c) => c.op === 'translate')!.args as number[],
+      rot: before.find((c) => c.op === 'rotate')!.args[0] as number,
+      rect: calls[i].args.slice(0, 4) as number[],
+    };
+  }
+
+  it('hangs the tab from the mouth: centred 22 px ahead of the head along the head angle, rotated with it', () => {
+    const { ctx, calls } = fakeContext();
+    drawPose(ctx, walkingPose(), sprites, 0, { title: 'YouTube', faviconColor: '#d9483b' });
+    const { hx, hy, ha } = headFrame(calls);
+    const tab = tabFrame(calls);
+    expect(tab.at[0]).toBeCloseTo(hx + Math.cos(ha) * 22, 6);
+    expect(tab.at[1]).toBeCloseTo(hy + Math.sin(ha) * 22, 6);
+    expect(tab.rot).toBeCloseTo(ha + Math.PI / 2, 6);
+    // The rect is centred on that point: 18 tall, so its near edge is 13 px ahead of the head pivot.
+    const [x, y, w, h] = tab.rect;
+    expect(x + w / 2).toBeCloseTo(0, 6);
+    expect(y + h / 2).toBeCloseTo(0, 6);
+    expect(h).toBe(18);
+  });
+
+  it('never overlaps the eye whites (head-local x <= 1.4 + 4.8)', () => {
+    const { ctx, calls } = fakeContext();
+    drawPose(ctx, walkingPose(), sprites, 0, { title: 'A rather long page title that keeps going', faviconColor: '#3d7be0' });
+    const tab = tabFrame(calls);
+    const [, y, , h] = tab.rect;
+    // In the tab frame, local -y points away from the head and +y toward it, so the near edge is at y + h.
+    const nearEdgeAhead = 22 - (y + h);
+    expect(nearEdgeAhead).toBeGreaterThan(1.4 + 4.8);
+  });
+
+  it('grows the tab with the title', () => {
+    const width = (title: string): number => {
+      const { ctx, calls } = fakeContext();
+      drawPose(ctx, walkingPose(), sprites, 0, { title, faviconColor: '#d9483b' });
+      return tabFrame(calls).rect[2];
+    };
+    expect(width('A much longer page title')).toBeGreaterThan(width('YouTube'));
+    expect(width('X')).toBe(62);
+  });
+});

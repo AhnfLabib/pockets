@@ -331,10 +331,14 @@ export function drawPose(
   }
   ctx.restore();
 
-  // The carried tab, held about 19 px ahead of the head.
+  // The carried tab hangs from the mouth: centred CARRY_AHEAD px ahead of the head pivot along the head
+  // angle (skull radius ~13 + half the tab's 18 px height) and turned with the head, so it covers the
+  // snout tip but never the eyes. Its rounded top points away from the mouth.
   if (carried) {
-    const x = hx + Math.cos(ha) * 19;
-    const y = hy + Math.sin(ha) * 19;
+    const CARRY_AHEAD = 22;
+    ctx.save();
+    ctx.translate(hx + Math.cos(ha) * CARRY_AHEAD, hy + Math.sin(ha) * CARRY_AHEAD);
+    ctx.rotate(ha + Math.PI / 2);
     ctx.font = '500 10px "DM Sans", sans-serif';
     let title = carried.title;
     const maxW = 110;
@@ -343,23 +347,24 @@ export function drawPose(
       title += '…';
     }
     const boxW = Math.max(62, 26 + ctx.measureText(title).width);
-    const left = x - boxW / 2;
+    const left = -boxW / 2;
     shadowOn();
     ctx.fillStyle = '#fbfaf5';
     ctx.strokeStyle = INK;
     ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.roundRect(left, y - 9, boxW, 18, [6, 6, 0, 0]);
+    ctx.roundRect(left, -9, boxW, 18, [6, 6, 0, 0]);
     ctx.fill();
     shadowOff();
     ctx.stroke();
     ctx.fillStyle = carried.faviconColor;
     ctx.beginPath();
-    ctx.roundRect(left + 6, y - 5, 10, 10, 2);
+    ctx.roundRect(left + 6, -5, 10, 10, 2);
     ctx.fill();
     ctx.fillStyle = '#1c2230';
     ctx.textBaseline = 'middle';
-    ctx.fillText(title, left + 20, y + 0.5);
+    ctx.fillText(title, left + 20, 0.5);
+    ctx.restore();
   }
   ctx.restore();
 }
