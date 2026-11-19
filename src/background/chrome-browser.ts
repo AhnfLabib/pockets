@@ -24,6 +24,12 @@ export function sessionIsTab(closed: ClosedEntry[], sessionId: string, url: stri
   return closed.some((e) => e.tab?.sessionId === sessionId && e.tab.url === url);
 }
 
+/** The final check before closing: the tab still shows `expectedUrl`, is not about to navigate away, and is unpinned. */
+export function canCloseTab(t: { url?: string; pendingUrl?: string; pinned?: boolean } | null | undefined, expectedUrl: string): boolean {
+  if (!t || t.url !== expectedUrl || t.pinned) return false;
+  return t.pendingUrl === undefined || t.pendingUrl === '' || t.pendingUrl === expectedUrl;
+}
+
 async function recentlyClosed(): Promise<ClosedEntry[]> {
   return chrome.sessions.getRecentlyClosed({ maxResults: chrome.sessions.MAX_SESSION_RESULTS ?? 25 });
 }
@@ -62,15 +68,25 @@ export const chromeBrowser: Browser = {
     }
   },
 
-  async removeTab(id) {
+  async removeTab(id, expectedUrl) {
     snapshot = null;
+    let ids: string[] | null = null;
     try {
+      ids = closedIdsFor(await recentlyClosed(), expectedUrl);
+    } catch {
+      ids = null; // no snapshot: Undo will open the URL instead of restoring
+    }
+    try {
+      // The last await before the close: the tab must still be the one the visit warned about.
       const t = await chrome.tabs.get(id);
-      if (t.url) snapshot = { url: t.url, ids: closedIdsFor(await recentlyClosed(), t.url) };
+      if (!canCloseTab(t, expectedUrl)) return false;
+      if (ids) snapshot = { url: expectedUrl, ids };
+      await chrome.tabs.remove(id);
+      return true;
     } catch {
       snapshot = null;
+      return false;
     }
-    await chrome.tabs.remove(id);
   },
 
   /** True only when the top frame's content script answered `{ ok: true }`. */

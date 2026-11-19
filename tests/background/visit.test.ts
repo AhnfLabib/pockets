@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Visits, type Browser } from '../../src/background/visit';
 import { Store, type KV } from '../../src/background/store';
-import { chromeBrowser, pickNewSession, sessionIsTab, closedIdsFor } from '../../src/background/chrome-browser';
+import { chromeBrowser, pickNewSession, sessionIsTab, closedIdsFor, canCloseTab } from '../../src/background/chrome-browser';
 import { DEFAULT_SETTINGS } from '../../src/shared/defaults';
 import type { ActiveVisit, RuntimeState, TabInfo, ToContent, VisitPlan } from '../../src/shared/types';
 
@@ -27,6 +27,8 @@ class FakeBrowser implements Browser {
   sessionUrls: (string | undefined)[] = [];
   restoreOk = true;
   removeThrows = false;
+  removeRefuses = false;
+  removeUrls: string[] = [];
   restored: string[] = [];
   restoredUrls: string[] = [];
   onGetTab: ((id: number) => void) | null = null;
@@ -43,15 +45,18 @@ class FakeBrowser implements Browser {
     return { windowId: this.windowId, tabs: [...this.tabs.values()].filter((t) => t.windowId === this.windowId).map((t) => ({ ...t })) };
   }
   async getTab(id: number) { this.onGetTab?.(id); const t = this.tabs.get(id); return t ? { ...t } : null; }
-  async removeTab(id: number) {
+  async removeTab(id: number, expectedUrl: string) {
+    this.removeUrls.push(expectedUrl);
     if (this.removeThrows) throw new Error('No tab with id');
     const t = this.tabs.get(id);
+    if (this.removeRefuses || !t || t.url !== expectedUrl) return false; // the adapter's final check
     this.removed.push(id);
     this.tabs.delete(id);
     if (t?.active) {
       const next = [...this.tabs.values()].find((x) => x.windowId === t.windowId);
       if (next) next.active = true;
     }
+    return true;
   }
   async send(tabId: number, msg: ToContent) {
     this.sent.push({ tabId, msg });
@@ -738,8 +743,10 @@ describe('Fix round 1', () => {
     await v.onEvent(1, id, { type: 'take' });
     expect(calls).toBeGreaterThanOrEqual(2);
     expect(b.removed).toEqual([]);
+    expect(b.removeUrls).toEqual([]); // removeTab was never asked
     expect(await store.taken()).toEqual([]);
     expect((await rt()).visit).toBeNull();
+    expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
   });
 
   it('card-shown is persisted', async () => {
@@ -797,5 +804,79 @@ describe('chrome adapter send', () => {
     expect(await chromeBrowser.send(1, { type: 'pockets/unmark' })).toBe(false);
     stub(() => Promise.reject(new Error('no receiver')));
     expect(await chromeBrowser.send(1, { type: 'pockets/unmark' })).toBe(false);
+  });
+});
+
+describe('Fix round 2: removeTab checks the URL itself', () => {
+  it('the happy path passes the target URL to removeTab', async () => {
+    const id = await startShown();
+    await v.onEvent(1, id, { type: 'take' });
+    expect(b.removeUrls).toEqual(['https://old.com/page']);
+    expect(b.removed).toEqual([2]);
+  });
+
+  it('removeTab returning false: nothing recorded or counted, visit cleared, stage told to cancel, no notice', async () => {
+    const id = await startShown();
+    b.removeRefuses = true;
+    await v.onEvent(1, id, { type: 'take' });
+    expect(b.removeUrls).toEqual(['https://old.com/page']);
+    expect(b.removed).toEqual([]);
+    expect(await store.taken()).toEqual([]);
+    const r = await rt();
+    expect(r.visit).toBeNull();
+    expect(r.staleTakes).toEqual([]);
+    expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
+    expect(b.to(2, 'pockets/unmark')).toHaveLength(1);
+    expect(b.to(1, 'pockets/notice')).toEqual([]);
+  });
+
+  it('removeTab returning false for a stage-target: nothing recorded, the stage is told to cancel', async () => {
+    await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+    b.tabs.get(1)!.active = false;
+    b.add({ id: 4, url: 'https://reddit.com/r/x', title: 'Reddit', active: true, lastAccessed: T0 });
+    await v.tick();
+    const id = await visitId();
+    await v.onEvent(4, id, { type: 'card-shown' });
+    await v.onEvent(4, id, { type: 'take' });
+    b.removeRefuses = true;
+    await v.onEvent(4, id, { type: 'done' });
+    expect(b.removed).toEqual([]);
+    expect(await store.taken()).toEqual([]);
+    expect((await rt()).lastDistractingTake).toBe(0);
+    expect(b.to(4, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
+  });
+
+  it('canCloseTab: only the same URL, unpinned, not navigating elsewhere', () => {
+    const u = 'https://a.com/p';
+    expect(canCloseTab({ url: u, pinned: false }, u)).toBe(true);
+    expect(canCloseTab({ url: u, pinned: false, pendingUrl: u }, u)).toBe(true);
+    expect(canCloseTab({ url: 'https://a.com/redirected', pinned: false }, u)).toBe(false);
+    expect(canCloseTab({ url: u, pinned: true }, u)).toBe(false);
+    expect(canCloseTab({ url: u, pinned: false, pendingUrl: 'https://a.com/next' }, u)).toBe(false);
+    expect(canCloseTab(null, u)).toBe(false);
+  });
+
+  describe('chrome adapter removeTab', () => {
+    afterEach(() => { delete (globalThis as { chrome?: unknown }).chrome; });
+    function stub(tabUrl: string) {
+      const removed: number[] = [];
+      (globalThis as { chrome?: unknown }).chrome = {
+        tabs: { get: async (id: number) => ({ id, url: tabUrl, pinned: false }), remove: async (id: number) => { removed.push(id); } },
+        sessions: { MAX_SESSION_RESULTS: 25, getRecentlyClosed: async () => [] },
+      };
+      return removed;
+    }
+
+    it('closes when the URL still matches', async () => {
+      const removed = stub('https://a.com/p');
+      expect(await chromeBrowser.removeTab(7, 'https://a.com/p')).toBe(true);
+      expect(removed).toEqual([7]);
+    });
+
+    it('refuses, without calling tabs.remove, when the tab has redirected', async () => {
+      const removed = stub('https://a.com/redirected');
+      expect(await chromeBrowser.removeTab(7, 'https://a.com/p')).toBe(false);
+      expect(removed).toEqual([]);
+    });
   });
 });

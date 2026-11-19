@@ -3,7 +3,7 @@
 // Safety rules enforced here (see the design's "A visit" and the plan's Global Constraints):
 //   - A tab is closed only after the visit's own stage reported `card-shown` (persisted as rt.visit.cardShown).
 //   - At take, the target is re-read: gone, a different URL, another window, pinned or typed into means close nothing.
-//   - Only rt.visit.targetTabId is ever passed to removeTab.
+//   - Only rt.visit.targetTabId is ever passed to removeTab, with targetUrl; the adapter closes only if the URL still matches.
 //   - One visit at a time; only tabs in the focused window are candidates.
 //   - A stored visit found on wake, or one silent for 60 s, is cancelled and unmarked; nothing is closed.
 // Every public method runs read-decide-write inside one promise queue, so events cannot interleave.
@@ -16,7 +16,8 @@ import { spareKept, type Store } from './store';
 export interface Browser {
   tabsInFocusedWindow(): Promise<{ windowId: number; tabs: TabInfo[] } | null>;
   getTab(id: number): Promise<TabInfo | null>;
-  removeTab(id: number): Promise<void>;
+  /** Close the tab only if, at the last moment, its URL is still `expectedUrl` (and it is unpinned). True if it was closed. */
+  removeTab(id: number, expectedUrl: string): Promise<boolean>;
   /** False if the tab cannot receive (no content script, asleep, or it answered `{ ok: false }`). */
   send(tabId: number, msg: ToContent): Promise<boolean>;
   userActive(): Promise<boolean>;
@@ -263,17 +264,23 @@ export class Visits {
     // Record first, so a worker death between close and record cannot lose a closed tab.
     const entry = { title, url: v.targetUrl, takenAt, reason: v.reason, ...(favIconUrl ? { favIconUrl } : {}) };
     await this.store.addTaken(entry);
-    // Hard rule 2, again at the last moment: store writes above took time. Re-read and close only an unchanged target.
-    const last = await this.browser.getTab(v.targetTabId);
-    if (!tabMatches(last, v, windowId) || (await this.store.runtime()).typedIn.includes(v.targetTabId)) {
+    // Hard rule 2, again at the last moment: the store writes above took time. Read everything else first, so nothing
+    // is awaited between this re-read and removeTab, which itself checks the URL once more right before closing.
+    const typed = (await this.store.runtime()).typedIn.includes(v.targetTabId);
+    const last = typed ? null : await this.browser.getTab(v.targetTabId);
+    let closed = false;
+    if (!typed && tabMatches(last, v, windowId)) {
+      try {
+        closed = await this.browser.removeTab(v.targetTabId, v.targetUrl);
+      } catch {
+        closed = false;
+      }
+    }
+    if (closed !== true) {
+      // Not taken: no record, nothing counted, and the stage must not play a grab for it.
       await this.store.removeTaken(takenAt);
       await this.browser.send(v.targetTabId, { type: 'pockets/unmark' });
-      return;
-    }
-    try {
-      await this.browser.removeTab(v.targetTabId);
-    } catch {
-      await this.store.removeTaken(takenAt);
+      await this.browser.send(v.stageTabId, { type: 'pockets/cancel', visitId: v.visitId });
       return;
     }
     const sessionId = await this.browser.lastClosedSessionId(v.targetUrl);
