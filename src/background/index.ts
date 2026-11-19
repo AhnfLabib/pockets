@@ -5,7 +5,7 @@ import { Visits } from './visit';
 import { Store, clearTyped, forgetTab, setWorking } from './store';
 import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
-import { canUndo, isExtensionPage } from './sender';
+import { canUndo, isExtensionPage, pageLoadedTab } from './sender';
 import type { RuntimeState, Settings, ToBackground } from '../shared/types';
 
 /** True only in a test build (POCKETS_TEST=1, see scripts/build.mjs). A normal build drops every `if` on it. */
@@ -39,11 +39,7 @@ function tabGone(tabId: number): void {
 }
 chrome.tabs.onRemoved.addListener((tabId) => tabGone(tabId));
 chrome.tabs.onReplaced.addListener((_added, removed) => tabGone(removed));
-chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.url !== undefined) void visits.onTabChanged(tabId);
-  // "Typed into since the page loaded": a new load (navigation or reload) ends the old page's protection.
-  if (info.status === 'loading') void visits.updateRuntime((rt) => clearTyped(rt, tabId));
-});
+chrome.tabs.onUpdated.addListener((tabId, info) => { if (info.url !== undefined) void visits.onTabChanged(tabId); });
 chrome.tabs.onActivated.addListener((info) => { void visits.onTabActivated(info.tabId); });
 chrome.tabs.onCreated.addListener(() => { void visits.tick(); });
 chrome.windows.onFocusChanged.addListener(() => { void visits.onFocusChanged(); void visits.tick(); });
@@ -75,6 +71,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         void visits.updateRuntime((rt) => (rt.typedIn.includes(tabId) ? rt : { ...rt, typedIn: [...rt.typedIn, tabId] }));
       }
       break;
+    case 'pockets/page-loaded': {
+      // "Typed into since the page loaded": the top frame started on a new document (load or reload), so typing
+      // reported for the previous document no longer protects the tab. The new page reports again if typed into.
+      const loaded = pageLoadedTab(sender);
+      if (loaded !== undefined) void visits.updateRuntime((rt) => clearTyped(rt, loaded));
+      break;
+    }
     case 'pockets/set-working':
       if (typeof m.on === 'boolean') {
         const on = m.on;

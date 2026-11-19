@@ -16,4 +16,4 @@ export interface RuntimeState { working: boolean; workingSince: number; spared: 
 
 export type ToContent = { type: 'pockets/ping' } | { type: 'pockets/play'; plan: VisitPlan } | { type: 'pockets/cancel'; visitId: string }
                       | { type: 'pockets/mark'; remaining: number } | { type: 'pockets/unmark' } | { type: 'pockets/notice'; title: string; takenAt: number };
-export type ToBackground = { type: 'pockets/typed' } | { type: 'pockets/event'; visitId: string; event: VisitEvent } | { type: 'pockets/undo'; takenAt: number } | { type: 'pockets/set-working'; on: boolean };
+export type ToBackground = { type: 'pockets/typed' } | { type: 'pockets/page-loaded' } | { type: 'pockets/event'; visitId: string; event: VisitEvent } | { type: 'pockets/undo'; takenAt: number } | { type: 'pockets/set-working'; on: boolean };

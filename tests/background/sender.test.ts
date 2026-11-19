@@ -25,3 +25,13 @@ describe('canUndo', () => {
   it('unknown takenAt: false', () => expect(canUndo({ url: root + 'x', frameId: 0 }, undefined, root)).toBe(false));
   it('no recorded notice tab: false for web pages', () => expect(canUndo({ url: 'https://a.com/', frameId: 0, tab: { id: 7 } }, {}, root)).toBe(false));
 });
+
+describe('pageLoadedTab', () => {
+  it('names the tab for its top frame only', async () => {
+    const { pageLoadedTab } = await import('../../src/background/sender');
+    expect(pageLoadedTab({ frameId: 0, tab: { id: 5 } })).toBe(5);
+    expect(pageLoadedTab({ frameId: 3, tab: { id: 5 } }), 'a child frame is ignored').toBeUndefined();
+    expect(pageLoadedTab({ frameId: 0 }), 'no tab').toBeUndefined();
+    expect(pageLoadedTab({ tab: { id: 5 } }), 'no frame id (extension page)').toBeUndefined();
+  });
+});

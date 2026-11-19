@@ -76,6 +76,19 @@ describe('content host', () => {
     expect(first.showNotice).not.toHaveBeenCalled();
   });
 
+  it('the top frame sends page-loaded once when it starts', async () => {
+    const { sendMessage, call } = setup();
+    await call({ type: 'pockets/ping' });
+    await call({ type: 'pockets/play', plan });
+    expect(sendMessage.mock.calls.filter(([m]) => m.type === 'pockets/page-loaded')).toEqual([[{ type: 'pockets/page-loaded' }]]);
+  });
+
+  it('a child frame never sends page-loaded', () => {
+    const child = { top: {} } as unknown as Window;
+    const { sendMessage } = setup({}, child);
+    expect(sendMessage.mock.calls.some(([m]) => m.type === 'pockets/page-loaded')).toBe(false);
+  });
+
   it('child frames ignore ping but still report typing', async () => {
     const child = { top: {} } as unknown as Window;
     const { handler, sendMessage } = setup({}, child);

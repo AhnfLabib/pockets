@@ -29,6 +29,9 @@ export function startContent(env: HostEnv): void {
   // Child frames only report typing; the top frame alone answers the background.
   if (win !== win.top) return;
 
+  // A new document in the top frame: typing reported for the previous one no longer counts. Sent once, at start.
+  void send({ type: 'pockets/page-loaded' });
+
   let stagePromise: Promise<Stage> | null = null;
   let stage: Stage | null = null;
   let currentVisit: string | null = null;

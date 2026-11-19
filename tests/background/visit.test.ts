@@ -1018,3 +1018,14 @@ describe('Visits: typed-in protection lasts until the page loads again', () => {
     expect(b.removed).toEqual([2]);
   });
 });
+
+describe('Visits: same-document URL changes keep typed-in protection', () => {
+  it('a pushState-style URL update (onTabChanged) on a typed-in tab leaves typedIn alone', async () => {
+    await v.updateRuntime((r) => ({ ...r, typedIn: [2] }));
+    b.tabs.get(2)!.url = 'https://old.com/page#route-2';
+    await v.onTabChanged(2);
+    expect((await rt()).typedIn).toEqual([2]);
+    await v.tick();
+    expect((await rt()).visit, 'still protected').toBeNull();
+  });
+});

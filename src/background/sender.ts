@@ -17,3 +17,10 @@ export function canUndo(
   if (isExtensionPage(sender.url, extensionBase)) return true;
   return sender.frameId === 0 && sender.tab?.id !== undefined && sender.tab.id === taken.noticeTabId;
 }
+
+/** The tab whose top frame just started a content script on a new document, or undefined for any other sender
+ *  (a child frame, an extension page, no tab). Only that clears the tab's typed-in protection: same-document
+ *  navigations (pushState, hash changes) and iframe loads do not re-run the top frame's content script. */
+export function pageLoadedTab(sender: { frameId?: number; tab?: { id?: number } }): number | undefined {
+  return sender.frameId === 0 && typeof sender.tab?.id === 'number' ? sender.tab.id : undefined;
+}

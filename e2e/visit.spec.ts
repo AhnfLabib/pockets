@@ -426,12 +426,24 @@ test('top layer: a full-viewport modal dialog opened after the card appears mean
 });
 
 test('typed-in: a stale tab typed into is protected until it reloads, then it can be taken', async ({ context, worker, server }) => {
-  const formUrl = serve(server, '/typed-reload', page('form', '<input id="field" type="text">'));
+  serve(server, '/typed-reload-inner', page('inner'));
+  serve(server, '/typed-reload-inner2', page('inner2'));
+  const formUrl = serve(server, '/typed-reload', page('form', '<input id="field" type="text"><iframe id="fr" src="/typed-reload-inner"></iframe>'));
   const formPage = await open(context, formUrl, context.pages()[0]);
   const form = await tabFor(worker, formUrl);
   await contentReady(worker, form.id);
   await formPage.locator('#field').pressSequentially('hello', { delay: 20 });
   await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'typing was reported' }).toContain(form.id);
+
+  // Same-document navigations and an iframe load do not end the protection (no new top-frame document).
+  await formPage.evaluate(() => {
+    history.pushState({}, '', location.pathname + '#route-a');
+    location.hash = 'route-b';
+    (document.getElementById('fr') as HTMLIFrameElement).src = '/typed-reload-inner2';
+  });
+  await expect.poll(() => formPage.frames().some((f) => f.url().endsWith('/typed-reload-inner2'))).toBe(true);
+  await sleep(1000);
+  expect((await runtime(worker))?.typedIn ?? [], 'still protected after pushState, hash change and iframe load').toContain(form.id);
 
   await sleep(150);
   const otherUrl = serve(server, '/typed-reload-other', page('other'));
