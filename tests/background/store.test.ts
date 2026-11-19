@@ -79,3 +79,40 @@ describe('transitions', () => {
     expect(base).toEqual(snap);
   });
 });
+
+describe('corrupt storage', () => {
+  it('runtime() falls back per field and forgetTab does not throw', async () => {
+    for (const field of ['typedIn', 'staleTakes', 'spared', 'visit', 'working', 'workingSince', 'lastStaleVisitEnd', 'lastDistractingTake']) {
+      for (const v of ['str', null, 5, 'x'.repeat(2)]) {
+        const kv = mapKV();
+        await kv.set('runtime', { ...rt(), [field]: v });
+        const r = await new Store(kv).runtime();
+        expect(Array.isArray(r.typedIn)).toBe(true);
+        expect(Array.isArray(r.staleTakes)).toBe(true);
+        expect(() => forgetTab(r, 1)).not.toThrow();
+      }
+    }
+  });
+  it('filters non-numbers from arrays and bad spared entries', async () => {
+    const kv = mapKV();
+    await kv.set('runtime', rt({ typedIn: [1, 'a', null, 2] as never, spared: { 1: 'x', 2: { until: 3 } } as never, visit: 7 as never }));
+    const r = await new Store(kv).runtime();
+    expect(r.typedIn).toEqual([1, 2]);
+    expect(r.spared).toEqual({ 2: { until: 3 } });
+    expect(r.visit).toBeNull();
+  });
+  it('whole runtime value as array gives defaults', async () => {
+    const kv = mapKV();
+    await kv.set('runtime', [1, 2]);
+    expect(await new Store(kv).runtime()).toEqual(rt());
+  });
+  it('taken() drops invalid elements and removeTaken works', async () => {
+    const kv = mapKV();
+    const good = tab(4);
+    await kv.set('taken', [null, 5, good]);
+    const s = new Store(kv);
+    expect(await s.taken()).toEqual([good]);
+    await s.removeTaken(4);
+    expect(await s.taken()).toEqual([]);
+  });
+});
