@@ -1029,3 +1029,21 @@ describe('Visits: same-document URL changes keep typed-in protection', () => {
     expect((await rt()).visit, 'still protected').toBeNull();
   });
 });
+
+describe('Visits: the card never came on screen', () => {
+  it('hidden before any card-shown: abandoned, visit cleared, nothing removed, gap starts', async () => {
+    await v.tick();
+    const id = await visitId();
+    now += 10_000;
+    await v.onEvent(1, id, { type: 'alive' });
+    now += 2_000;
+    await v.onEvent(1, id, { type: 'hidden' });
+    const r = await rt();
+    expect(r.visit).toBeNull();
+    expect(b.removed).toEqual([]);
+    expect(r.spared).toEqual({});
+    expect(r.lastStaleVisitEnd).toBe(now);
+    expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
+    expect(b.to(2, 'pockets/unmark')).toHaveLength(1);
+  });
+});

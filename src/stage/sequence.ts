@@ -64,6 +64,8 @@ const BORDER_X = 30;
 /** How often the stage says it is still playing, from play until card-shown. MV3 stops a service worker that has
  *  heard nothing for about 30 s, and a long climb on a big screen sends no other event. */
 export const ALIVE_MS = 10_000;
+/** How long the countdown phase waits for the card to be on screen before giving up with hidden. */
+export const SHOW_TIMEOUT_MS = 10_000;
 
 /**
  * Where a tab's centre probably is, in viewport px. Extensions cannot read the tab strip, so this models
@@ -95,7 +97,8 @@ export function cardPosition(tx: number, width: number, reduced: boolean): { lef
  * Events: card-shown (only once the card is on screen), tick N … tick 1 a second apart, then either keep
  * (when Keep is clicked) or take (one second after tick 1), and done once Pockets has gone. If the card is not on
  * screen when the take is due (say the page opened a modal dialog over it), hidden is emitted instead of take and
- * the visit ends there, with no done. From play until card-shown, alive is emitted every ten seconds so the
+ * the visit ends there, with no done; the same happens if the card has not come on screen within ten seconds of
+ * the countdown phase starting. From play until card-shown (or hidden), alive is emitted every ten seconds so the
  * background's service worker is not stopped mid-climb; it stops on card-shown, on abort and when the visit ends.
  */
 export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: SequenceDeps): Promise<void> {
@@ -238,7 +241,19 @@ async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: S
 
   /** Show the card, run the countdown and settle keep or take. The card is hidden on take. */
   async function countdown(r: RigLike): Promise<'keep' | 'take' | 'cancelled'> {
-    const shown = await orAbort(card.show(at, text, onKeep), false);
+    // Wait at most SHOW_TIMEOUT_MS for the card to be on screen (say a popover covers it): then give up with hidden.
+    let showTimer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<'timeout'>((res) => { showTimer = setTimeout(() => res('timeout'), SHOW_TIMEOUT_MS); });
+    const shown = await orAbort<boolean | 'timeout'>(Promise.race([card.show(at, text, onKeep), timedOut]), false);
+    clearTimeout(showTimer);
+    if (shown === 'timeout') {
+      if (!live()) return 'cancelled';
+      stopAlive();
+      r.setReach(false);
+      out({ type: 'hidden' });
+      card.hide();
+      return 'cancelled';
+    }
     if (!shown || !live()) return 'cancelled';
     stopAlive(); // the ticks keep the worker awake from here
     out({ type: 'card-shown' });

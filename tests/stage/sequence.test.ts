@@ -179,10 +179,12 @@ describe('runVisit', () => {
   it('resolves with no card-shown and no further events when aborted while the card can never show', async () => {
     // Models a hidden tab: requestAnimationFrame never fires, so the card's show() never settles by itself.
     const s = setup();
-    s.deps.card.show = () => new Promise<boolean>(() => {});
+    let showCalled = false;
+    s.deps.card.show = () => { showCalled = true; return new Promise<boolean>(() => {}); };
     let resolved = false;
     const p = runVisit(plan(), s.emit, s.deps).then(() => { resolved = true; });
-    await vi.advanceTimersByTimeAsync(30_000); // climb done, stuck at show()
+    while (!showCalled) await vi.advanceTimersByTimeAsync(100); // climb done, stuck at show()
+    await vi.advanceTimersByTimeAsync(5_000); // inside the 10 s show window
     expect(resolved).toBe(false);
     const before = s.events.length;
     s.ac.abort();
@@ -367,5 +369,46 @@ describe('runVisit keep-awake (alive)', () => {
     await r.p;
     r.s.stop();
     expect(allTypes(r.s.events)).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'take', 'done']);
+  });
+});
+
+describe('runVisit: the card never comes on screen', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  for (const reduced of [false, true]) {
+    it(`emits hidden 10 s after the countdown phase starts, with no card-shown, take or done (reduced ${reduced})`, async () => {
+      const s = setup({ reduced });
+      let showAt = -1;
+      const t0 = Date.now();
+      s.deps.card.show = () => { showAt = Date.now() - t0; return new Promise<boolean>(() => {}); };
+      const at: { type: string; t: number }[] = [];
+      let resolved = false;
+      const p = runVisit(plan(), (e) => { s.emit(e); at.push({ type: e.type, t: Date.now() - t0 }); }, s.deps)
+        .then(() => { resolved = true; });
+      await vi.advanceTimersByTimeAsync(120_000);
+      s.stop();
+      expect(resolved).toBe(true);
+      await p;
+      expect(types(s.events)).toEqual(['hidden']);
+      const hidden = at.find((e) => e.type === 'hidden')!;
+      expect(hidden.t - showAt).toBe(10_000);
+      // alive stops with hidden: none after it.
+      expect(at.filter((e) => e.type === 'alive' && e.t > hidden.t)).toEqual([]);
+      expect(s.card.log.at(-1)).toBe('hide');
+    });
+  }
+
+  it('alive pings during a long wait stop at hidden', async () => {
+    const s = setup();
+    const t0 = Date.now();
+    s.deps.card.show = () => new Promise<boolean>(() => {});
+    const at: { type: string; t: number }[] = [];
+    void runVisit(plan(), (e) => { at.push({ type: e.type, t: Date.now() - t0 }); }, s.deps);
+    await vi.advanceTimersByTimeAsync(120_000);
+    s.stop();
+    const hidden = at.find((e) => e.type === 'hidden')!.t;
+    expect(at.filter((e) => e.type === 'alive').every((e) => e.t < hidden)).toBe(true);
+    expect(at.at(-1)!.type).toBe('hidden');
   });
 });

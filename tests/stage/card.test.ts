@@ -124,25 +124,34 @@ describe('runVisit with the real card', () => {
     expect(types(v.events).filter((t) => t !== 'alive')).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'take', 'done']);
   });
 
-  it('a modal dialog open when the card should show: no card-shown, it keeps waiting until aborted', async () => {
+  it('a modal dialog open when the card should show: no card-shown; it waits, then gives up with hidden after 10 s', async () => {
     modal = true;
     const v = play();
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(types(v.events)).not.toContain('card-shown');
-    expect(types(v.events)).not.toContain('take');
-    expect(v.resolved()).toBe(false);
-    v.ac.abort();
-    await vi.advanceTimersByTimeAsync(100);
-    expect(v.resolved()).toBe(true);
+    expect(v.resolved(), 'still waiting inside the 10 s window').toBe(false);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await v.p;
+    expect(types(v.events).filter((x) => x !== 'alive')).toEqual(['hidden']);
+    expect(card.el.hidden).toBe(true);
   });
 
-  it('an element fullscreen when the card should show: no card-shown', async () => {
+  it('a modal dialog open when the card should show, then aborted inside the window: nothing emitted', async () => {
+    modal = true;
+    const v = play();
+    await vi.advanceTimersByTimeAsync(5_000);
+    v.ac.abort();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(v.resolved()).toBe(true);
+    expect(types(v.events).filter((x) => x !== 'alive')).toEqual([]);
+  });
+
+  it('an element fullscreen when the card should show: no card-shown, hidden after 10 s', async () => {
     fullscreen = document.createElement('video');
     const v = play();
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(types(v.events)).not.toContain('card-shown');
-    v.ac.abort();
-    await vi.advanceTimersByTimeAsync(100);
+    await v.p;
+    expect(types(v.events).filter((x) => x !== 'alive')).toEqual(['hidden']);
   });
 
   it('a modal dialog that opens after card-shown, before the countdown ends: hidden, never take, no done', async () => {
