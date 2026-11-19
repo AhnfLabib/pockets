@@ -13,8 +13,9 @@ function isTextEntry(el: Element | null): boolean {
 /**
  * Calls onFirst on the first `input` event in a text field, textarea or contenteditable (also inside open shadow
  * roots). If onFirst throws, rejects or returns false, the next input event tries again; otherwise it is done.
+ * Returns a function that stops watching.
  */
-export function watchTyping(doc: Document, onFirst: () => void | boolean | Promise<unknown>): void {
+export function watchTyping(doc: Document, onFirst: () => void | boolean | Promise<unknown>): () => void {
   let done = false;
   let inflight = false;
   const handler = (e: Event) => {
@@ -39,4 +40,8 @@ export function watchTyping(doc: Document, onFirst: () => void | boolean | Promi
       .finally(() => { inflight = false; });
   };
   doc.addEventListener('input', handler, true);
+  return () => {
+    done = true;
+    doc.removeEventListener('input', handler, true);
+  };
 }

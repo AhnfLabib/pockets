@@ -12,40 +12,125 @@ export interface HostEnv {
   sendMessage: (msg: ToBackground) => Promise<unknown>;
   onMessage: (fn: (msg: unknown, respond: (r: unknown) => void) => boolean | void) => void;
   mountStage: (doc: Document, assetBase: string) => Promise<Stage>;
+  /**
+   * The top frame's typing state for this document is unknown: this instance did not see the document start (it was
+   * injected into a tab open since before install or update, or the document_start script's page-loaded is missing).
+   * The tab is then reported as typed in at once, so it is protected until it next loads a page.
+   */
+  typingUnknown?: boolean;
+  /** Delay between attempts of a report that must not be lost. Tests shorten it. */
+  retryMs?: number;
 }
 
-export function startContent(env: HostEnv): void {
+export interface ContentHandle {
+  /** Stops everything this instance does in the page: called when a newer instance replaces an orphaned one. */
+  dispose(): void;
+}
+
+const REPORT_ATTEMPTS = 5;
+
+export function startContent(env: HostEnv): ContentHandle {
   const { win, doc } = env;
+  let disposed = false;
+  const cleanups: (() => void)[] = [];
   const send = (msg: ToBackground): Promise<boolean> => {
+    if (disposed) return Promise.resolve(false);
     try {
       return Promise.resolve(env.sendMessage(msg)).then(() => true, () => false);
     } catch {
       return Promise.resolve(false);
     }
   };
+  /** A typing report with no later input event to retry it: try a few times. */
+  const reportTyped = (attempt = 1): void => {
+    void send({ type: 'pockets/typed' }).then((ok) => {
+      if (!ok && !disposed && attempt < REPORT_ATTEMPTS) win.setTimeout(() => reportTyped(attempt + 1), env.retryMs ?? 500);
+    });
+  };
 
-  watchTyping(doc, () => send({ type: 'pockets/typed' }));
+  // Typing seen in this document, set on the input event itself (not on a successful send).
+  let typedSeen = false;
+  cleanups.push(watchTyping(doc, () => {
+    typedSeen = true;
+    return send({ type: 'pockets/typed' });
+  }));
+
+  // Back/forward cache: a restored page does not re-run any content script, while the page the user left cleared the
+  // tab's typed-in protection with its own page-loaded. Report again if this document was typed into. Every frame does
+  // this for its own typing.
+  const onPageShow = (e: Event) => {
+    if ((e as PageTransitionEvent).persisted === true && typedSeen) reportTyped();
+  };
+  win.addEventListener('pageshow', onPageShow);
+  cleanups.push(() => win.removeEventListener('pageshow', onPageShow));
+
+  const handle: ContentHandle = {
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (const c of cleanups.splice(0)) {
+        try { c(); } catch { /* ignore */ }
+      }
+    },
+  };
 
   // Child frames only report typing; the top frame alone answers the background.
-  if (win !== win.top) return;
+  // page-loaded is not sent from here: content-start.js sends it at document_start (see start.ts).
+  if (win !== win.top) return handle;
 
-  // A new document in the top frame: typing reported for the previous one no longer counts. Sent once, at start.
-  void send({ type: 'pockets/page-loaded' });
+  // Stage hosts left in the page by an orphaned instance (an older build whose context died) would sit over ours.
+  for (const el of Array.from(doc.querySelectorAll('pockets-stage'))) el.remove();
+
+  if (env.typingUnknown) reportTyped();
 
   let stagePromise: Promise<Stage> | null = null;
   let stage: Stage | null = null;
   let currentVisit: string | null = null;
 
-  const getStage = (): Promise<Stage> => {
-    // The page may have removed the stage element; a cached stage is then dead, so mount a fresh one.
+  /** The page may have removed the stage element; a cached stage is then dead and is dropped, so the next use mounts
+   *  a fresh one. */
+  const dropDeadStage = (): void => {
     if (stage && !stage.connected()) {
       const dead = stage;
       stage = null;
       stagePromise = null;
       try { dead.destroy(); } catch { /* ignore */ }
     }
+  };
+
+  // Leaving for the back/forward cache: the background ends any visit on this tab when its URL changes, so stop the
+  // animation here too; a restored page must not carry on with an old visit. On return, drop a stage that is gone.
+  const onPageHide = (e: Event) => {
+    if ((e as PageTransitionEvent).persisted !== true) return;
+    currentVisit = null;
+    try { stage?.cancel(); } catch { /* ignore */ }
+  };
+  const onTopPageShow = (e: Event) => {
+    if ((e as PageTransitionEvent).persisted === true) dropDeadStage();
+  };
+  win.addEventListener('pagehide', onPageHide);
+  win.addEventListener('pageshow', onTopPageShow);
+  cleanups.push(() => {
+    win.removeEventListener('pagehide', onPageHide);
+    win.removeEventListener('pageshow', onTopPageShow);
+    currentVisit = null;
+    const s = stage;
+    stage = null;
+    stagePromise = null;
+    try { s?.destroy(); } catch { /* ignore */ }
+  });
+
+  const getStage = (): Promise<Stage> => {
+    dropDeadStage();
     if (!stagePromise) {
-      const p = env.mountStage(doc, env.assetBase).then((s) => (stage = s));
+      const p = env.mountStage(doc, env.assetBase).then((s) => {
+        // Disposed while mounting: this stage belongs to no one.
+        if (disposed) {
+          try { s.destroy(); } catch { /* ignore */ }
+          throw new Error('disposed');
+        }
+        return (stage = s);
+      });
       p.catch(() => { if (stagePromise === p) stagePromise = null; });
       stagePromise = p;
     }
@@ -53,6 +138,7 @@ export function startContent(env: HostEnv): void {
   };
 
   env.onMessage((raw, respond) => {
+    if (disposed) return false;
     try {
       const msg = raw as ToContent;
       switch (msg.type) {
@@ -107,4 +193,5 @@ export function startContent(env: HostEnv): void {
       return false;
     }
   });
+  return handle;
 }

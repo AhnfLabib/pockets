@@ -27,6 +27,17 @@
         "<all_urls>"
       ],
       "js": [
+        "content-start.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
         "content.js"
       ],
       "run_at": "document_idle",

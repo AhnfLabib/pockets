@@ -32,6 +32,7 @@ interface TestSet {
   settings?: Record<string, unknown>;
   runtime?: { lastStaleVisitEnd?: number; lastDistractingTake?: number; staleTakes?: number[] };
   tick?: boolean;
+  inject?: boolean;
 }
 interface Visit { visitId: string; targetTabId: number; targetUrl: string; stageTabId: number; reason: string; cardShown: boolean }
 interface Runtime { working: boolean; typedIn: number[]; spared: Record<string, { until?: number }>; visit: Visit | null }
@@ -44,7 +45,7 @@ const testSet = (worker: Worker, p: TestSet) =>
     const hook = (globalThis as any).__pocketsTestSet;
     if (typeof hook !== 'function') throw new Error('no test hook: build with `POCKETS_TEST=1 npm run build` first');
     return hook(arg);
-  }, p) as Promise<{ ok: boolean }>;
+  }, p) as Promise<{ ok: boolean; injected?: number[] }>;
 
 const runtime = (worker: Worker) =>
   worker.evaluate(async () => (await chrome.storage.local.get('runtime')).runtime ?? null) as Promise<Runtime | null>;
@@ -506,4 +507,148 @@ test('top layer in shadow DOM: a modal dialog opened inside a web component afte
   await sleep(2000);
   expect((await tabs(worker)).map((t) => t.id).sort(), 'nothing closed').toEqual([s.target.id, s.other.id, s.stage.id].sort());
   expect(await taken(worker)).toEqual([]);
+});
+
+test('slow page: typing in a frame before the top document has finished loading keeps the tab protected', async ({ context, worker, server }) => {
+  serve(server, '/slow-form', page('form', '<input id="field" type="text">'));
+  const formCross = otherOrigin(server) + '/slow-form';
+  let release!: () => void;
+  const released = new Promise<void>((r) => { release = r; });
+  // The top document is streamed: the iframe arrives at once, the end of the document only when the test says so.
+  // Until then the top frame has not reached document_idle (nor DOMContentLoaded).
+  server.route('/slow-top', (_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    res.write('<!doctype html><html><head><title>slow</title></head><body style="margin:0;background:#fff">' +
+      `<iframe src="${formCross}" style="width:300px;height:120px"></iframe>` + `<!-- ${'x'.repeat(4096)} -->`);
+    void released.then(() => res.end('<p id="done">done</p></body></html>'));
+  });
+  const slowUrl = server.origin + '/slow-top';
+  const p = context.pages()[0];
+  await p.goto(slowUrl, { waitUntil: 'commit' });
+  await expect.poll(() => p.frames().length, { message: 'the iframe is in the page while the top still loads' }).toBe(2);
+  const tab = await tabFor(worker, slowUrl);
+  const field = p.frameLocator('iframe').locator('#field');
+  // Type until the frame's content script has seen it (it starts at the frame's own document_idle).
+  await expect.poll(async () => {
+    await field.pressSequentially('a', { delay: 10 });
+    return (await runtime(worker))?.typedIn ?? [];
+  }, { message: 'typing in the frame was reported before the top finished', timeout: 20_000, intervals: [200] }).toContain(tab.id);
+  expect(await p.evaluate(() => document.readyState), 'the top document is still loading').toBe('loading');
+
+  release();
+  await p.waitForLoadState('load');
+  await contentReady(worker, tab.id);
+  await sleep(1500);
+  expect((await runtime(worker))?.typedIn ?? [], 'still protected once the top document has loaded').toContain(tab.id);
+});
+
+test('install or update: a tab open before Pockets started gets the content script, hosts a visit at once, and is not taken until it reloads', async ({ context, worker, server }) => {
+  // A page whose content script predates the running build. The fixture loads the extension at launch, and
+  // chrome.runtime.reload() does not bring an unpacked extension back under Playwright (checked: no worker returns and
+  // its pages are blocked), so this is simulated in the page's isolated world: the running instance is torn down and its
+  // records are made to read as a dead context, which is what an update leaves behind. Then the background's injection
+  // routine (the one onInstalled runs) is called through the test hook.
+  const preUrl = serve(server, '/pre-install', page('pre'));
+  const prePage = await open(context, preUrl, context.pages()[0]);
+  const pre = await tabFor(worker, preUrl);
+  await contentReady(worker, pre.id);
+  expect((await runtime(worker))?.typedIn ?? [], 'a normally loaded page is not typed in').not.toContain(pre.id);
+
+  const orphaned = await worker.evaluate(async (tabId) => {
+    const [r] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const g = globalThis as unknown as Record<string, { dispose?: () => void; alive: () => boolean } | undefined>;
+        const content = g.__pocketsContent;
+        const start = g.__pocketsStart;
+        if (!content || !start) return false;
+        content.dispose?.();
+        content.alive = () => { throw new Error('Extension context invalidated.'); };
+        start.alive = () => false;
+        return true;
+      },
+    });
+    return r.result;
+  }, pre.id);
+  expect(orphaned, 'the page had a running content script and a document_start record').toBe(true);
+  // Torn down: the page no longer answers.
+  const answers = await worker.evaluate((id) => chrome.tabs.sendMessage(id, { type: 'pockets/ping' }, { frameId: 0 }).then((r) => r?.from === 'content', () => false), pre.id);
+  expect(answers, 'the orphaned instance does not answer').toBe(false);
+
+  const first = await testSet(worker, { inject: true });
+  expect(first.injected, 'the routine injected into the open http tab').toContain(pre.id);
+  await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'the injected tab counts as typed in' }).toContain(pre.id);
+  await contentReady(worker, pre.id);
+  // A second injection (declared + programmatic, or a repeated install event) is a no-op in that frame.
+  expect((await testSet(worker, { inject: true })).injected).toContain(pre.id);
+
+  // A tab opened now (declared scripts, page-loaded at document_start) is the stale target; the injected page is the stage.
+  const targetUrl = serve(server, '/post-install-target', page('t'));
+  await open(context, targetUrl);
+  const target = await tabFor(worker, targetUrl);
+  await contentReady(worker, target.id);
+  await prePage.bringToFront();
+  await expectStaleSetup(worker, target.id, pre.id);
+  expect((await runtime(worker))?.typedIn ?? [], 'the new tab is not typed in').not.toContain(target.id);
+
+  await testSet(worker, { settings: QUICK_STALE, runtime: { lastStaleVisitEnd: 0 }, tick: true });
+  const v = await waitVisit(worker, (x) => x.targetTabId === target.id, 'a stale visit staged on the injected page');
+  expect(v.stageTabId).toBe(pre.id);
+  await waitVisit(worker, (x) => x.visitId === v.visitId && x.cardShown, 'card-shown from the injected content script');
+  await tabGone(worker, target.id);
+  await expect.poll(async () => (await taken(worker)).find((t) => t.url === targetUrl)?.noticeTabId).toBe(pre.id);
+  expect(await prePage.evaluate(() => document.querySelectorAll('pockets-stage').length), 'one stage host, not one per injection').toBe(1);
+
+  // The injected page itself, now a stale background tab, is protected until it next loads a page.
+  const frontUrl = serve(server, '/post-install-front', page('front'));
+  await open(context, frontUrl);
+  const front = await tabFor(worker, frontUrl);
+  await contentReady(worker, front.id);
+  await expect.poll(async () => (await runtime(worker))?.visit ?? null).toBeNull();
+  await sleep(900);
+  await testSet(worker, { runtime: { lastStaleVisitEnd: 0 }, tick: true });
+  expect((await runtime(worker))?.visit ?? null, 'the injected tab is not taken before it reloads').toBeNull();
+  expect((await tabs(worker)).some((t) => t.id === pre.id)).toBe(true);
+
+  await worker.evaluate((id) => chrome.tabs.reload(id), pre.id);
+  await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'reloading ends the protection' }).not.toContain(pre.id);
+  await contentReady(worker, pre.id);
+  expect((await tabs(worker)).find((t) => t.active)?.id).toBe(front.id);
+  await testSet(worker, { runtime: { lastStaleVisitEnd: 0 }, tick: true });
+  await waitVisit(worker, (x) => x.targetTabId === pre.id, 'the reloaded tab can be taken');
+  await tabGone(worker, pre.id);
+});
+
+// Playwright turns the back/forward cache off by default (--disable-back-forward-cache); this test turns it back on.
+const bfTest = base.extend<{ context: BrowserContext }>({
+  context: async ({ userDataDir }, use) => {
+    const context = await launchExtensionContext(userDataDir, [], ['--disable-back-forward-cache']);
+    await use(context);
+    await context.close().catch(() => {});
+  },
+});
+
+bfTest('bfcache: typing on a page, leaving it and coming Back from the cache protects the tab again', async ({ context, worker, server }) => {
+  const record = '<script>addEventListener("pageshow", (e) => { window.__shows = (window.__shows || []).concat(e.persisted); });</script>';
+  const aUrl = serve(server, '/bf-a', page('a', '<input id="field" type="text">' + record));
+  const bUrl = serve(server, '/bf-b', page('b'));
+  const p = await open(context, aUrl, context.pages()[0]);
+  const tab = await tabFor(worker, aUrl);
+  await contentReady(worker, tab.id);
+  await p.locator('#field').pressSequentially('hello', { delay: 20 });
+  await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'typing on A reported' }).toContain(tab.id);
+
+  await p.goto(bUrl);
+  await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: "B's page-loaded clears A's typing" }).not.toContain(tab.id);
+
+  // A restore from the cache fires pageshow, not load, so wait for the commit only.
+  await p.goBack({ waitUntil: 'commit' });
+  await expect.poll(() => p.evaluate(() => ((window as unknown as { __shows?: boolean[] }).__shows ?? []).length)).toBeGreaterThan(0);
+  const shows = await p.evaluate(() => (window as unknown as { __shows?: boolean[] }).__shows ?? []);
+  bfTest.skip(shows[shows.length - 1] !== true, `A was not restored from the back/forward cache under Playwright (pageshow persisted: ${JSON.stringify(shows)}); covered by the unit tests only`);
+  await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'A, restored from the cache, reports its typing again' }).toContain(tab.id);
+  // The top frame still answers after the restore.
+  await contentReady(worker, tab.id);
+  await sleep(1000);
+  expect((await runtime(worker))?.typedIn ?? []).toContain(tab.id);
 });
