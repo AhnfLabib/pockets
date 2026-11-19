@@ -74,3 +74,9 @@ export function forgetTab(rt: RuntimeState, tabId: number): RuntimeState {
   delete spared[tabId];
   return { ...rt, spared, typedIn: rt.typedIn.filter((id) => id !== tabId) };
 }
+
+/** The tab started loading a page: typing reported for the previous page no longer protects it. The content script
+ *  reports again if the user types into the new page. */
+export function clearTyped(rt: RuntimeState, tabId: number): RuntimeState {
+  return rt.typedIn.includes(tabId) ? { ...rt, typedIn: rt.typedIn.filter((id) => id !== tabId) } : rt;
+}

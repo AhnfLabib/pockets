@@ -2,7 +2,7 @@
 // Listeners are registered synchronously at top level, and onWake is queued before anything else,
 // so an event that woke the worker is always handled after a leftover visit has been cancelled.
 import { Visits } from './visit';
-import { Store, forgetTab, setWorking } from './store';
+import { Store, clearTyped, forgetTab, setWorking } from './store';
 import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
 import { canUndo, isExtensionPage } from './sender';
@@ -39,7 +39,11 @@ function tabGone(tabId: number): void {
 }
 chrome.tabs.onRemoved.addListener((tabId) => tabGone(tabId));
 chrome.tabs.onReplaced.addListener((_added, removed) => tabGone(removed));
-chrome.tabs.onUpdated.addListener((tabId, info) => { if (info.url !== undefined) void visits.onTabChanged(tabId); });
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.url !== undefined) void visits.onTabChanged(tabId);
+  // "Typed into since the page loaded": a new load (navigation or reload) ends the old page's protection.
+  if (info.status === 'loading') void visits.updateRuntime((rt) => clearTyped(rt, tabId));
+});
 chrome.tabs.onActivated.addListener((info) => { void visits.onTabActivated(info.tabId); });
 chrome.tabs.onCreated.addListener(() => { void visits.tick(); });
 chrome.windows.onFocusChanged.addListener(() => { void visits.onFocusChanged(); void visits.tick(); });

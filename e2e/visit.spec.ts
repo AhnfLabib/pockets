@@ -424,3 +424,42 @@ test('top layer: a full-viewport modal dialog opened after the card appears mean
   // The target's title is put back (unmarked).
   await expect.poll(async () => (await tabFor(worker, s.target.url)).title).toBe('m1');
 });
+
+test('typed-in: a stale tab typed into is protected until it reloads, then it can be taken', async ({ context, worker, server }) => {
+  const formUrl = serve(server, '/typed-reload', page('form', '<input id="field" type="text">'));
+  const formPage = await open(context, formUrl, context.pages()[0]);
+  const form = await tabFor(worker, formUrl);
+  await contentReady(worker, form.id);
+  await formPage.locator('#field').pressSequentially('hello', { delay: 20 });
+  await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'typing was reported' }).toContain(form.id);
+
+  await sleep(150);
+  const otherUrl = serve(server, '/typed-reload-other', page('other'));
+  await open(context, otherUrl);
+  await sleep(150);
+  const stageUrl = serve(server, '/typed-reload-stage', page('stage'));
+  await open(context, stageUrl);
+  const stage = await tabFor(worker, stageUrl);
+  await contentReady(worker, (await tabFor(worker, otherUrl)).id);
+  await contentReady(worker, stage.id);
+  await expectStaleSetup(worker, form.id, stage.id);
+
+  // Protected: the typed-in tab is the oldest, yet the other background tab is picked; once that is gone, nothing is.
+  await testSet(worker, { settings: QUICK_STALE, tick: true });
+  const first = await waitVisit(worker, () => true, 'a stale visit');
+  expect(first.targetTabId, 'the typed-in tab is skipped').not.toBe(form.id);
+  await tabGone(worker, first.targetTabId);
+  await testSet(worker, { runtime: { lastStaleVisitEnd: 0 }, tick: true });
+  expect((await runtime(worker))?.visit ?? null, 'still protected: no visit').toBeNull();
+
+  // Reload the typed-in tab in the background (it stays the least recently used tab): the protection ends.
+  await worker.evaluate((id) => chrome.tabs.reload(id), form.id);
+  await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'typing forgotten after the reload' }).not.toContain(form.id);
+  await contentReady(worker, form.id);
+  expect((await tabs(worker)).find((t) => t.active)?.id, 'the stage is still in front').toBe(stage.id);
+
+  await testSet(worker, { runtime: { lastStaleVisitEnd: 0 }, tick: true });
+  const v = await waitVisit(worker, (x) => x.targetTabId === form.id, 'a stale visit for the reloaded tab');
+  expect(v.reason).toBe('stale');
+  await tabGone(worker, form.id);
+});

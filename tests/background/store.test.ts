@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Store, spareKept, setWorking, forgetTab, type KV, type TakenTab } from '../../src/background/store';
+import { Store, spareKept, setWorking, forgetTab, clearTyped, type KV, type TakenTab } from '../../src/background/store';
 import { DEFAULT_SETTINGS } from '../../src/shared/defaults';
 import type { RuntimeState } from '../../src/shared/types';
 
@@ -68,6 +68,15 @@ describe('transitions', () => {
     const out = forgetTab(rt({ spared: { 1: { until: 1 }, 2: { until: 2 } }, typedIn: [1, 2, 3] }), 1);
     expect(out.spared).toEqual({ 2: { until: 2 } });
     expect(out.typedIn).toEqual([2, 3]);
+  });
+  it('clearTyped (a new page load) removes only that tab from typedIn and keeps its spare', () => {
+    const base = rt({ spared: { 1: { until: 1 } }, typedIn: [1, 2, 3] });
+    const snap = JSON.parse(JSON.stringify(base));
+    const out = clearTyped(base, 2);
+    expect(out.typedIn).toEqual([1, 3]);
+    expect(out.spared).toEqual({ 1: { until: 1 } });
+    expect(base).toEqual(snap);
+    expect(clearTyped(out, 9)).toBe(out); // a tab that was never typed into: unchanged
   });
   it('transitions do not mutate input', () => {
     const base = rt({ spared: { 1: { until: 1 } }, typedIn: [1, 2] });

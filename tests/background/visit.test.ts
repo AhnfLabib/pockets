@@ -1003,3 +1003,18 @@ describe('Visits: alive during a long climb', () => {
     expect((await rt()).visit).toBeNull();
   });
 });
+
+describe('Visits: typed-in protection lasts until the page loads again', () => {
+  it('a typed-in stale tab is skipped; after clearTyped (status loading) it is taken', async () => {
+    const { clearTyped } = await import('../../src/background/store');
+    await v.updateRuntime((r) => ({ ...r, typedIn: [2] }));
+    await v.tick();
+    expect((await rt()).visit, 'tab 2 is protected and tab 3 is not stale').toBeNull();
+    await v.updateRuntime((r) => clearTyped(r, 2));
+    expect((await rt()).typedIn).toEqual([]);
+    const id = await startShown();
+    expect((await rt()).visit!.targetTabId).toBe(2);
+    await v.onEvent(1, id, { type: 'take' });
+    expect(b.removed).toEqual([2]);
+  });
+});
