@@ -4,9 +4,13 @@ import { startContent, type HostEnv } from '../../src/content/host';
 
 const plan = { visitId: 'v1' } as never;
 
+function fakeStage(connected = true) {
+  return { play: vi.fn().mockResolvedValue(undefined), showNotice: vi.fn(), cancel: vi.fn(), destroy: vi.fn(), connected: vi.fn(() => connected) };
+}
+
 function setup(over: Partial<HostEnv> = {}, win: Window = window) {
   let handler!: (m: unknown, r: (x: unknown) => void) => boolean | void;
-  const stage = { play: vi.fn().mockResolvedValue(undefined), showNotice: vi.fn(), cancel: vi.fn(), destroy: vi.fn() };
+  const stage = fakeStage();
   const sendMessage = vi.fn().mockResolvedValue(undefined);
   const env: HostEnv = {
     win, doc: document, assetBase: 'x/', iconUrl: 'i', sendMessage,
@@ -42,6 +46,34 @@ describe('content host', () => {
     resolve(stage as never);
     await p;
     expect(stage.play).not.toHaveBeenCalled();
+  });
+
+  it('reuses a cached stage while its host element is still in the page', async () => {
+    const { call, stage, env } = setup();
+    await call({ type: 'pockets/play', plan });
+    await call({ type: 'pockets/play', plan: { visitId: 'v2' } });
+    expect(env.mountStage).toHaveBeenCalledTimes(1);
+    expect(stage.play).toHaveBeenCalledTimes(2);
+    expect(stage.destroy).not.toHaveBeenCalled();
+  });
+
+  it('a cached stage whose host element the page removed is destroyed and a fresh one mounted', async () => {
+    const first = fakeStage();
+    const second = fakeStage();
+    const mount = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const { call } = setup({ mountStage: mount });
+    await call({ type: 'pockets/play', plan });
+    expect(first.play).toHaveBeenCalledTimes(1);
+    first.connected.mockReturnValue(false); // the page removed <pockets-stage>
+    expect(await call({ type: 'pockets/play', plan: { visitId: 'v2' } })).toEqual({ ok: true });
+    expect(first.destroy).toHaveBeenCalledTimes(1);
+    expect(mount).toHaveBeenCalledTimes(2);
+    expect(first.play).toHaveBeenCalledTimes(1);
+    expect(second.play).toHaveBeenCalledTimes(1);
+    // The notice also goes to the fresh stage.
+    await call({ type: 'pockets/notice', title: 'x', takenAt: 1 });
+    expect(second.showNotice).toHaveBeenCalledTimes(1);
+    expect(first.showNotice).not.toHaveBeenCalled();
   });
 
   it('child frames ignore ping but still report typing', async () => {

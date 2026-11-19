@@ -34,6 +34,13 @@ export function startContent(env: HostEnv): void {
   let currentVisit: string | null = null;
 
   const getStage = (): Promise<Stage> => {
+    // The page may have removed the stage element; a cached stage is then dead, so mount a fresh one.
+    if (stage && !stage.connected()) {
+      const dead = stage;
+      stage = null;
+      stagePromise = null;
+      try { dead.destroy(); } catch { /* ignore */ }
+    }
     if (!stagePromise) {
       const p = env.mountStage(doc, env.assetBase).then((s) => (stage = s));
       p.catch(() => { if (stagePromise === p) stagePromise = null; });

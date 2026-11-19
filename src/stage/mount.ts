@@ -15,6 +15,8 @@ export interface Stage {
   showNotice(title: string, emit: (e: VisitEvent) => void): void;
   cancel(): void;
   destroy(): void;
+  /** False once the page has removed the stage's host element: the stage is dead and must be mounted again. */
+  connected(): boolean;
 }
 
 export interface StageOptions {
@@ -298,6 +300,7 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
       notice.show(noticeTitle, () => emit({ type: 'undo' }));
     },
     cancel,
+    connected: () => el.isConnected,
     destroy() {
       cancel();
       notice.hide();
