@@ -12,3 +12,7 @@ export type Reason = 'stale' | 'distracting';
 export interface ActiveVisit { visitId: string; targetTabId: number; targetUrl: string; stageTabId: number; reason: Reason; cardShown: boolean; startedAt: number }
 export interface RuntimeState { working: boolean; workingSince: number; spared: Record<number, Spare>; typedIn: number[];
                                 staleTakes: number[]; lastStaleVisitEnd: number; lastDistractingTake: number; visit: ActiveVisit | null }
+
+export type ToContent = { type: 'pockets/ping' } | { type: 'pockets/play'; plan: VisitPlan } | { type: 'pockets/cancel'; visitId: string }
+                      | { type: 'pockets/mark'; remaining: number } | { type: 'pockets/unmark' } | { type: 'pockets/notice'; title: string; takenAt: number };
+export type ToBackground = { type: 'pockets/typed' } | { type: 'pockets/event'; visitId: string; event: VisitEvent } | { type: 'pockets/undo'; takenAt: number };
