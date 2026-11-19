@@ -1,10 +1,10 @@
-// The character page (dist/harness/character.html), opened as a file the way the owner will open it.
+// The character page (dist-harness/character.html), opened as a file the way the owner will open it.
 // It plays a whole visit with the real stage mounted on an iframe's document.
 import { test, expect, type Page } from '@playwright/test';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 
-const PAGE = pathToFileURL(resolve(process.cwd(), 'dist/harness/character.html')).href;
+const PAGE = pathToFileURL(resolve(process.cwd(), 'dist-harness/character.html')).href;
 
 interface Snapshot { events: string[]; card: { left: number; top: number; width: number; height: number } | null }
 

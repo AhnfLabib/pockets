@@ -1,5 +1,5 @@
 // The character page: plays one visit with the real stage on a mock browser, for the owner to judge.
-// Built by scripts/build.mjs into dist/harness/, which embeds the sprite sheets as __POCKETS_SPRITES__.
+// Built by scripts/build.mjs into dist-harness/, which embeds the sprite sheets as __POCKETS_SPRITES__.
 import { mountStage, type Stage } from '../src/stage/mount';
 import type { SpriteMeta, Sprites } from '../src/stage/render';
 import type { VisitEvent, VisitPlan } from '../src/shared/types';

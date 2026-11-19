@@ -6,7 +6,10 @@ import { Store, forgetTab, setWorking } from './store';
 import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
 import { canUndo, isExtensionPage } from './sender';
-import type { ToBackground } from '../shared/types';
+import type { RuntimeState, Settings, ToBackground } from '../shared/types';
+
+/** True only in a test build (POCKETS_TEST=1, see scripts/build.mjs). A normal build drops every `if` on it. */
+declare const __POCKETS_TEST__: boolean;
 
 const ALARM = 'pockets-tick';
 
@@ -93,3 +96,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   return false;
 });
+
+// ---- Test builds only -------------------------------------------------------------------------------------------
+// The e2e hook `pockets/test-set`. scripts/build.mjs sets __POCKETS_TEST__ from POCKETS_TEST=1; in a normal build the
+// constant is false and esbuild removes this whole block, message name included (README: `grep -r "pockets/test-set" dist`).
+// It lets a test shrink the timings (settings are applied raw, unclamped, so staleHours can be a fraction), reset
+// pacing bookkeeping, and run a tick at once. Nothing here closes tabs: tick goes through the normal visit machine.
+// Accepted from this extension's own pages, or from code evaluated in this service worker by the test
+// (globalThis.__pocketsTestSet); a content script on a web page is refused.
+if (__POCKETS_TEST__) {
+  type TestSet = {
+    settings?: Partial<Settings>;
+    runtime?: Partial<Pick<RuntimeState, 'lastStaleVisitEnd' | 'lastDistractingTake' | 'staleTakes'>>;
+    tick?: boolean;
+  };
+  const KEY = 'pocketsTestSettings';
+  const readOverrides = async (): Promise<Partial<Settings>> => {
+    const o = (await chrome.storage.local.get(KEY))[KEY];
+    return o && typeof o === 'object' ? (o as Partial<Settings>) : {};
+  };
+  const realSettings = store.settings.bind(store);
+  store.settings = async () => ({ ...(await realSettings()), ...(await readOverrides()) });
+
+  const testSet = async (p: TestSet): Promise<{ ok: boolean }> => {
+    if (p.settings) await chrome.storage.local.set({ [KEY]: { ...(await readOverrides()), ...p.settings } });
+    const r = p.runtime;
+    if (r) {
+      await visits.updateRuntime((rt) => ({
+        ...rt,
+        ...(typeof r.lastStaleVisitEnd === 'number' ? { lastStaleVisitEnd: r.lastStaleVisitEnd } : {}),
+        ...(typeof r.lastDistractingTake === 'number' ? { lastDistractingTake: r.lastDistractingTake } : {}),
+        ...(Array.isArray(r.staleTakes) ? { staleTakes: r.staleTakes } : {}),
+      }));
+    }
+    if (p.tick) await visits.tick();
+    return { ok: true };
+  };
+  (globalThis as unknown as { __pocketsTestSet: typeof testSet }).__pocketsTestSet = testSet;
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    const m = message as ({ type?: unknown } & TestSet) | null;
+    if (!m || typeof m !== 'object' || m.type !== 'pockets/test-set') return false;
+    if (!isExtensionPage(sender.url, chrome.runtime.getURL(''))) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    testSet(m).then(sendResponse, () => sendResponse({ ok: false }));
+    return true;
+  });
+}

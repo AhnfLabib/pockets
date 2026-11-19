@@ -1,5 +1,9 @@
 // Bundles src/* into dist/ and copies the static extension/ (and assets/, once it exists).
-// Also builds the character page into dist/harness/ (see harness/character.html).
+// dist/ is the extension folder and holds only what the manifest needs.
+// Also builds the owner-facing character page into dist-harness/, outside the extension (see harness/character.html).
+//
+// POCKETS_TEST=1 makes a test build: __POCKETS_TEST__ is true and the background compiles in the e2e-only
+// `pockets/test-set` hook. In a normal build it is false and esbuild drops that code entirely.
 import { build } from 'esbuild';
 import { cp, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -7,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
+const harnessDist = join(root, 'dist-harness');
+const testBuild = process.env.POCKETS_TEST === '1';
 
 async function exists(path) {
   try {
@@ -18,6 +24,7 @@ async function exists(path) {
 }
 
 await rm(dist, { recursive: true, force: true });
+await rm(harnessDist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 
 await build({
@@ -33,7 +40,11 @@ await build({
   target: 'chrome120',
   sourcemap: false,
   logLevel: 'info',
+  // minifySyntax folds `if (false) { ... }` away, so the test-only hook is not shipped. Names and whitespace are kept.
+  minifySyntax: true,
+  define: { __POCKETS_TEST__: JSON.stringify(testBuild) },
 });
+if (testBuild) console.log('POCKETS_TEST=1: test build, with the pockets/test-set hook');
 
 await cp(join(root, 'extension'), dist, { recursive: true });
 await cp(join(root, 'src/options/options.html'), join(dist, 'options.html'));
@@ -44,7 +55,7 @@ if (await exists(join(root, 'assets'))) {
   await cp(join(root, 'assets'), join(dist, 'assets'), { recursive: true });
 }
 
-// The character page: opened straight from dist/harness/ as a file, where fetch() cannot read sprites.json,
+// The character page: opened straight from dist-harness/ as a file, where fetch() cannot read sprites.json,
 // so the real sprite sheets and their metadata are embedded in its bundle as data URLs.
 const spriteDir = join(root, 'assets/sprites');
 const harnessSprites = {
@@ -53,10 +64,10 @@ const harnessSprites = {
     [0, 1, 2].map(async (i) => 'data:image/png;base64,' + (await readFile(join(spriteDir, `sheet-${i}.png`))).toString('base64')),
   ),
 };
-await mkdir(join(dist, 'harness'), { recursive: true });
+await mkdir(harnessDist, { recursive: true });
 await build({
   entryPoints: [join(root, 'harness/character.ts')],
-  outfile: join(dist, 'harness/character.js'),
+  outfile: join(harnessDist, 'character.js'),
   bundle: true,
   format: 'iife',
   target: 'chrome120',
@@ -64,4 +75,4 @@ await build({
   logLevel: 'info',
   define: { __POCKETS_SPRITES__: JSON.stringify(harnessSprites) },
 });
-await cp(join(root, 'harness/character.html'), join(dist, 'harness/character.html'));
+await cp(join(root, 'harness/character.html'), join(harnessDist, 'character.html'));

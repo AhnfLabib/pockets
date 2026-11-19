@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-harness/
 .superpowers/
 test-results/
 playwright-report/
