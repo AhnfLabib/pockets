@@ -30,7 +30,7 @@ chrome.tabs.onReplaced.addListener((_added, removed) => tabGone(removed));
 chrome.tabs.onUpdated.addListener((tabId, info) => { if (info.url !== undefined) void visits.onTabChanged(tabId); });
 chrome.tabs.onActivated.addListener((info) => { void visits.onTabActivated(info.tabId); });
 chrome.tabs.onCreated.addListener(() => { void visits.tick(); });
-chrome.windows.onFocusChanged.addListener(() => { void visits.tick(); });
+chrome.windows.onFocusChanged.addListener(() => { void visits.onFocusChanged(); void visits.tick(); });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const msg = message as { type?: unknown } | null;

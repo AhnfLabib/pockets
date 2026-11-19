@@ -6,6 +6,31 @@ import type { Browser } from './visit';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const SEND_TIMEOUT_MS = 10_000;
 
+/** The parts of a chrome.sessions.Session the helpers read. */
+export interface ClosedEntry { tab?: { url?: string; sessionId?: string } }
+
+/** Session ids of closed tabs with this URL. */
+export function closedIdsFor(closed: ClosedEntry[], url: string): string[] {
+  return closed.flatMap((e) => (e.tab?.url === url && e.tab.sessionId ? [e.tab.sessionId] : []));
+}
+
+/** The newest closed tab with this URL that was not already closed before our removal (`before`). */
+export function pickNewSession(closed: ClosedEntry[], url: string, before: readonly string[]): string | undefined {
+  return closedIdsFor(closed, url).find((id) => !before.includes(id));
+}
+
+/** True when `sessionId` is a closed tab whose URL is `url`. */
+export function sessionIsTab(closed: ClosedEntry[], sessionId: string, url: string): boolean {
+  return closed.some((e) => e.tab?.sessionId === sessionId && e.tab.url === url);
+}
+
+async function recentlyClosed(): Promise<ClosedEntry[]> {
+  return chrome.sessions.getRecentlyClosed({ maxResults: chrome.sessions.MAX_SESSION_RESULTS ?? 25 });
+}
+
+/** Closed-tab session ids with the target's URL, taken just before removeTab, so an older same-URL entry is never chosen. */
+let snapshot: { url: string; ids: string[] } | null = null;
+
 function toTabInfo(t: chrome.tabs.Tab): TabInfo | null {
   if (t.id === undefined || t.id === chrome.tabs.TAB_ID_NONE) return null;
   return {
@@ -38,6 +63,13 @@ export const chromeBrowser: Browser = {
   },
 
   async removeTab(id) {
+    snapshot = null;
+    try {
+      const t = await chrome.tabs.get(id);
+      if (t.url) snapshot = { url: t.url, ids: closedIdsFor(await recentlyClosed(), t.url) };
+    } catch {
+      snapshot = null;
+    }
     await chrome.tabs.remove(id);
   },
 
@@ -63,13 +95,16 @@ export const chromeBrowser: Browser = {
     }
   },
 
-  /** The most recently closed tab with this URL. The list may lag tabs.remove slightly, so poll briefly. */
+  /** The tab our last removeTab closed: a closed entry with this URL that was not in the pre-removal snapshot.
+   *  The list may lag tabs.remove slightly, so poll briefly. Without a matching snapshot, give no id (Undo opens the URL). */
   async lastClosedSessionId(url) {
+    const snap = snapshot;
+    snapshot = null;
+    if (url === undefined || !snap || snap.url !== url) return undefined;
     for (let i = 0; i < 6; i++) {
       try {
-        const closed = await chrome.sessions.getRecentlyClosed({ maxResults: 10 });
-        const entry = closed.find((s) => s.tab && (url === undefined || s.tab.url === url));
-        if (entry?.tab?.sessionId) return entry.tab.sessionId;
+        const id = pickNewSession(await recentlyClosed(), url, snap.ids);
+        if (id) return id;
       } catch {
         return undefined;
       }
@@ -78,8 +113,10 @@ export const chromeBrowser: Browser = {
     return undefined;
   },
 
-  async restore(sessionId) {
+  /** Restore only if the session entry is still a closed tab with this URL (ids can change across restarts). */
+  async restore(sessionId, url) {
     try {
+      if (!sessionIsTab(await recentlyClosed(), sessionId, url)) return false;
       await chrome.sessions.restore(sessionId);
       return true;
     } catch {

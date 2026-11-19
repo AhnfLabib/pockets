@@ -22,7 +22,8 @@ export interface Browser {
   userActive(): Promise<boolean>;
   /** The session id of the most recently closed tab, optionally only if it has this URL. */
   lastClosedSessionId(url?: string): Promise<string | undefined>;
-  restore(sessionId: string): Promise<boolean>;
+  /** Restore the closed tab, only if that session entry is a tab with this URL; false otherwise. */
+  restore(sessionId: string, url: string): Promise<boolean>;
   openUrl(url: string): Promise<void>;
 }
 
@@ -54,6 +55,12 @@ export function reasonText(reason: 'stale' | 'distracting', lastAccessed: number
   }
   const h = Math.max(1, Math.floor(age / HOUR));
   return `not opened for ${h} ${h === 1 ? 'hour' : 'hours'}`;
+}
+
+/** The tab is still the visit's target: same id and URL, unpinned, and (when known) in the same window. */
+function tabMatches(t: TabInfo | null, v: ActiveVisit, windowId: number | undefined): boolean {
+  if (!t || t.id !== v.targetTabId || t.url !== v.targetUrl || t.pinned) return false;
+  return windowId === undefined || t.windowId === windowId;
 }
 
 export class Visits {
@@ -95,33 +102,52 @@ export class Visits {
     });
   }
   undo(takenAt: number): Promise<void> { return this.serial(() => this.doUndo(takenAt)); }
+  /** A window gained or lost focus. */
+  onFocusChanged(): Promise<void> { return this.serial(() => this.doFocusChanged()); }
 
   // ---- internals (always called inside the queue) ----
 
   private memoFor(v: ActiveVisit): Memo | null { return this.memo && this.memo.visitId === v.visitId ? this.memo : null; }
 
-  /** Clear the visit and save. Any started stale visit counts for the gap between visits. */
-  private async end(rt: RuntimeState, v: ActiveVisit, extra: Partial<RuntimeState> = {}): Promise<RuntimeState> {
-    const next: RuntimeState = { ...rt, ...extra, visit: null };
-    if (v.reason === 'stale') next.lastStaleVisitEnd = this.now();
+  /** Clear the visit and save. A started stale visit counts for the gap between visits unless `countGap` is false. */
+  private async end(rt: RuntimeState, v: ActiveVisit, countGap = true): Promise<RuntimeState> {
+    const next: RuntimeState = { ...rt, visit: null };
+    if (countGap && v.reason === 'stale') next.lastStaleVisitEnd = this.now();
     this.memo = null;
     await this.store.saveRuntime(next);
     return next;
   }
 
   /** Cancel on the stage and unmark the target, best-effort. Closes nothing. */
-  private async abandon(rt: RuntimeState, v: ActiveVisit): Promise<void> {
-    await this.end(rt, v);
+  private async abandon(rt: RuntimeState, v: ActiveVisit, countGap = true): Promise<void> {
+    await this.end(rt, v, countGap);
     await this.browser.send(v.targetTabId, { type: 'pockets/unmark' });
     await this.browser.send(v.stageTabId, { type: 'pockets/cancel', visitId: v.visitId });
+  }
+
+  /** True when the stage is the active tab of the focused window. */
+  private async stageInFront(v: ActiveVisit): Promise<boolean> {
+    const win = await this.browser.tabsInFocusedWindow();
+    return !!win && win.tabs.some((t) => t.id === v.stageTabId && t.active && t.windowId === win.windowId);
+  }
+
+  /** The user switched away from the stage: cancel, unmark, close nothing, spare nothing; the next tick may try again. */
+  private async abandonIfStageHidden(rt: RuntimeState, v: ActiveVisit): Promise<boolean> {
+    if (await this.stageInFront(v)) return false;
+    await this.abandon(rt, v, false);
+    return true;
+  }
+
+  private visitSilent(v: ActiveVisit): boolean {
+    const last = this.memoFor(v)?.lastEventAt ?? v.startedAt;
+    return !(this.now() - last < ABANDON_MS);
   }
 
   private async doTick(): Promise<void> {
     const rt = await this.store.runtime();
     const now = this.now();
     if (rt.visit) {
-      const last = this.memoFor(rt.visit)?.lastEventAt ?? rt.visit.startedAt;
-      if (!(now - last < ABANDON_MS)) await this.abandon(rt, rt.visit);
+      if (this.visitSilent(rt.visit)) await this.abandon(rt, rt.visit);
       return;
     }
     const win = await this.browser.tabsInFocusedWindow();
@@ -155,6 +181,8 @@ export class Visits {
       const cur = await this.store.runtime();
       if (cur.visit?.visitId === visit.visitId) await this.store.saveRuntime({ ...cur, visit: null });
       this.memo = null;
+      // The reply may only have timed out: tell a late stage not to play a visit nobody is running.
+      await this.browser.send(stageTabId, { type: 'pockets/cancel', visitId: visit.visitId });
       return false;
     }
     return true;
@@ -164,13 +192,19 @@ export class Visits {
     const rt = await this.store.runtime();
     const v = rt.visit;
     if (!v || v.visitId !== visitId || tabId !== v.stageTabId) return;
+    // Hard rule 6: a visit silent for 60 s is abandoned, whatever event arrives next.
+    if (this.visitSilent(v)) { await this.abandon(rt, v); return; }
     const memo = this.memoFor(v);
     if (memo) memo.lastEventAt = this.now();
 
     switch (e.type) {
-      case 'card-shown':
-        if (v.cardShown !== true) await this.store.saveRuntime({ ...rt, visit: { ...v, cardShown: true } });
+      case 'card-shown': {
+        // Persist first; then make sure the user can actually see the stage.
+        const shown: RuntimeState = { ...rt, visit: { ...v, cardShown: true } };
+        if (v.cardShown !== true) await this.store.saveRuntime(shown);
+        await this.abandonIfStageHidden(shown, shown.visit!);
         return;
+      }
       case 'tick':
         if (memo) memo.remaining = e.remaining;
         await this.browser.send(v.targetTabId, { type: 'pockets/mark', remaining: e.remaining }); // failure is not fatal
@@ -183,6 +217,7 @@ export class Visits {
       }
       case 'take': {
         if (v.cardShown !== true) { await this.abandon(rt, v); return; }
+        if (await this.abandonIfStageHidden(rt, v)) return;
         if (!(await this.targetStillValid(rt, v))) { await this.abandon(rt, v); return; }
         if (v.targetTabId !== v.stageTabId) { await this.finishTake(rt, v); return; }
         // The target is the stage: let the grab play, then close on `done` or after 800 ms, whichever is first.
@@ -211,18 +246,15 @@ export class Visits {
   /** Re-read the target: it must still exist with the same URL, in the same window, unpinned, and not typed into. */
   private async targetStillValid(rt: RuntimeState, v: ActiveVisit): Promise<boolean> {
     if (rt.typedIn.includes(v.targetTabId)) return false; // typed into during the visit: closing would lose work
-    const t = await this.browser.getTab(v.targetTabId);
-    if (!t || t.id !== v.targetTabId || t.url !== v.targetUrl || t.pinned) return false;
-    const memo = this.memoFor(v);
-    if (memo && t.windowId !== memo.windowId) return false;
-    return true;
+    return tabMatches(await this.browser.getTab(v.targetTabId), v, this.memoFor(v)?.windowId);
   }
 
   /** Close exactly v.targetTabId. Callers have checked cardShown and re-read the target. */
   private async finishTake(rt: RuntimeState, v: ActiveVisit): Promise<void> {
     if (v.cardShown !== true) return; // belt and braces: never close without the card
     const memo = this.memoFor(v);
-    const target = await this.browser.getTab(v.targetTabId);
+    const windowId = memo?.windowId;
+    const target = memo ? null : await this.browser.getTab(v.targetTabId);
     const title = memo?.title ?? target?.title ?? v.targetUrl;
     const favIconUrl = memo ? memo.favIconUrl : target?.favIconUrl;
     const takenAt = this.now();
@@ -230,6 +262,13 @@ export class Visits {
     // Record first, so a worker death between close and record cannot lose a closed tab.
     const entry = { title, url: v.targetUrl, takenAt, reason: v.reason, ...(favIconUrl ? { favIconUrl } : {}) };
     await this.store.addTaken(entry);
+    // Hard rule 2, again at the last moment: store writes above took time. Re-read and close only an unchanged target.
+    const last = await this.browser.getTab(v.targetTabId);
+    if (!tabMatches(last, v, windowId) || (await this.store.runtime()).typedIn.includes(v.targetTabId)) {
+      await this.store.removeTaken(takenAt);
+      await this.browser.send(v.targetTabId, { type: 'pockets/unmark' });
+      return;
+    }
     try {
       await this.browser.removeTab(v.targetTabId);
     } catch {
@@ -267,7 +306,12 @@ export class Visits {
   private async doActivated(tabId: number): Promise<void> {
     const rt = await this.store.runtime();
     const v = rt.visit;
-    if (!v || tabId !== v.targetTabId || v.targetTabId === v.stageTabId) return;
+    if (!v) return;
+    if (tabId !== v.targetTabId || v.targetTabId === v.stageTabId) {
+      // Another tab was activated: if the stage is no longer in front, the user switched away.
+      if (tabId !== v.stageTabId) await this.abandonIfStageHidden(rt, v);
+      return;
+    }
     if (v.reason === 'stale') {
       // Treated as Keep, without the grumpy card text.
       const s = await this.store.settings();
@@ -292,10 +336,15 @@ export class Visits {
     }
   }
 
+  private async doFocusChanged(): Promise<void> {
+    const rt = await this.store.runtime();
+    if (rt.visit) await this.abandonIfStageHidden(rt, rt.visit);
+  }
+
   private async doUndo(takenAt: number): Promise<void> {
     const entry = (await this.store.taken()).find((t) => t.takenAt === takenAt);
     if (!entry) return;
-    const restored = entry.sessionId ? await this.browser.restore(entry.sessionId) : false;
+    const restored = entry.sessionId ? await this.browser.restore(entry.sessionId, entry.url) : false;
     if (!restored) await this.browser.openUrl(entry.url);
     await this.store.removeTaken(takenAt);
   }
