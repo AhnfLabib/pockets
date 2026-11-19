@@ -17,7 +17,10 @@ if (root) {
       store: new Store(chromeKV),
       currentUrl,
       now: () => Date.now(),
-      setWorking: async (on) => { await chrome.runtime.sendMessage({ type: 'pockets/set-working', on }); },
+      setWorking: async (on) => {
+        const reply = (await chrome.runtime.sendMessage({ type: 'pockets/set-working', on })) as { ok?: boolean } | undefined;
+        if (!reply || reply.ok !== true) throw new Error('working mode was not changed');
+      },
       undo: (takenAt) => { void chrome.runtime.sendMessage({ type: 'pockets/undo', takenAt }); },
       openOptions: () => { void chrome.runtime.openOptionsPage(); },
     });

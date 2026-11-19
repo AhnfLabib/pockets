@@ -102,6 +102,13 @@ export class Visits {
       if (rt.visit) await this.abandon(rt, rt.visit);
     });
   }
+  /** Working mode was switched off: a distracting visit in progress is abandoned (close nothing, spare nothing). A stale visit goes on. */
+  onWorkingOff(): Promise<void> {
+    return this.serial(async () => {
+      const rt = await this.store.runtime();
+      if (rt.visit && rt.visit.reason === 'distracting') await this.abandon(rt, rt.visit);
+    });
+  }
   undo(takenAt: number): Promise<void> { return this.serial(() => this.doUndo(takenAt)); }
   /** A window gained or lost focus. */
   onFocusChanged(): Promise<void> { return this.serial(() => this.doFocusChanged()); }

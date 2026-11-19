@@ -58,6 +58,23 @@ describe('working switch', () => {
   });
 });
 
+describe('switch failure and name', () => {
+  it('has a fixed accessible name', async () => {
+    await mount();
+    expect(sw().getAttribute('aria-label')).toBe('Working mode');
+  });
+  it('reverts to the stored state when the background refuses', async () => {
+    setWorking.mockRejectedValueOnce(new Error('nope'));
+    await mount();
+    sw().checked = true;
+    sw().dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(sw().checked).toBe(false);
+    expect(root.querySelector('.state')!.textContent).toBe('Not working');
+    expect(sw().disabled).toBe(false);
+  });
+});
+
 describe('add this site', () => {
   it('appends the site and reads Added', async () => {
     await mount();

@@ -627,6 +627,30 @@ describe('Visits: updateRuntime', () => {
   });
 });
 
+describe('Visits: working mode switched off', () => {
+  it('cancels a distracting visit: closes nothing, spares nothing, no gap', async () => {
+    await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+    b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', lastAccessed: T0 - 60_000 });
+    const id = await startShown();
+    expect((await rt()).visit!.reason).toBe('distracting');
+    await store.saveRuntime({ ...(await rt()), working: false });
+    await v.onWorkingOff();
+    const r = await rt();
+    expect(b.removed).toEqual([]);
+    expect(r.visit).toBeNull();
+    expect(r.spared[4]).toBeUndefined();
+    expect(r.lastStaleVisitEnd).toBe(0);
+    expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
+    expect(b.to(4, 'pockets/unmark')).toHaveLength(1);
+  });
+  it('leaves a stale visit alone', async () => {
+    const id = await startShown();
+    await v.onWorkingOff();
+    expect((await rt()).visit!.visitId).toBe(id);
+    expect(b.to(1, 'pockets/cancel')).toEqual([]);
+  });
+});
+
 describe('Fix round 1', () => {
   it('hard rule 6: an event arriving after 60 s of silence abandons the visit and closes nothing', async () => {
     const id = await startShown();

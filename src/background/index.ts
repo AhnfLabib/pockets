@@ -5,6 +5,7 @@ import { Visits } from './visit';
 import { Store, forgetTab, setWorking } from './store';
 import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
+import { isExtensionPage } from './sender';
 import type { ToBackground } from '../shared/types';
 
 const ALARM = 'pockets-tick';
@@ -48,6 +49,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   const m = msg as ToBackground;
+  // Only our own pages (popup, options) may change settings-like state; content scripts run on web pages.
+  if ((m.type === 'pockets/set-working' || m.type === 'pockets/undo') && !isExtensionPage(sender.url, chrome.runtime.getURL(''))) {
+    sendResponse({ ok: false });
+    return false;
+  }
   const tabId = sender.tab?.id;
   switch (m.type) {
     case 'pockets/event':
@@ -65,7 +71,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'pockets/set-working':
       if (typeof m.on === 'boolean') {
         const on = m.on;
-        void visits.updateRuntime((rt) => setWorking(rt, on, Date.now())).then(() => paintBadge(on)).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+        void (async () => {
+          await visits.updateRuntime((rt) => setWorking(rt, on, Date.now()));
+          // The queue contains errors, so confirm the save landed before reporting success or painting.
+          if ((await store.runtime()).working !== on) throw new Error('save failed');
+          if (!on) await visits.onWorkingOff();
+          paintBadge(on);
+        })().then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
         return true;
       }
       break;

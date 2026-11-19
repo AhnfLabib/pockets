@@ -39,7 +39,7 @@ export async function renderPopup(root: HTMLElement, deps: PopupDeps): Promise<v
   // Working mode
   const row = el('div', { class: 'row' });
   const label = el('label', { class: 'switch', for: 'working' });
-  const input = el('input', { id: 'working', type: 'checkbox', role: 'switch' });
+  const input = el('input', { id: 'working', type: 'checkbox', role: 'switch', 'aria-label': 'Working mode' });
   input.checked = rt.working;
   const state = el('span', { class: 'state' }, rt.working ? 'Working' : 'Not working');
   label.append(input, el('span', { class: 'track', 'aria-hidden': 'true' }), state);
