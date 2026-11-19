@@ -46,6 +46,29 @@ describe('Store', () => {
   });
 });
 
+describe('updateTaken', () => {
+  it('patches in place with one write: never absent, same length and order', async () => {
+    const m = new Map<string, unknown>();
+    const seen: number[][] = [];
+    const kv: KV = { get: async (k) => m.get(k), set: async (k, v) => { if (k === 'taken') seen.push((v as TakenTab[]).map((x) => x.takenAt)); m.set(k, v); } };
+    const s = new Store(kv);
+    for (const n of [1, 2, 3]) await s.addTaken(tab(n));
+    seen.length = 0;
+    await s.updateTaken(2, { noticeTabId: 9, sessionId: 'x' });
+    expect(seen).toEqual([[1, 2, 3]]);
+    const t = await s.taken();
+    expect(t.map((x) => x.takenAt)).toEqual([1, 2, 3]);
+    expect(t[1]).toEqual({ ...tab(2), noticeTabId: 9, sessionId: 'x' });
+    expect(t[0]).toEqual(tab(1));
+  });
+  it('an unknown takenAt changes nothing', async () => {
+    const s = new Store(mapKV());
+    await s.addTaken(tab(1));
+    await s.updateTaken(99, { noticeTabId: 1 });
+    expect(await s.taken()).toEqual([tab(1)]);
+  });
+});
+
 describe('transitions', () => {
   it('spareKept stale sets until = now + staleHours', () => {
     const now = 1_000_000;

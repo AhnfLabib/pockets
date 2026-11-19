@@ -55,6 +55,14 @@ export class Store {
     const list = [...(await this.taken()), t];
     await this.kv.set('taken', list.slice(-MAX_TAKEN));
   }
+  /** Patch the entry with this takenAt in place with one write, so a reader never sees it missing. Unknown takenAt: no change. */
+  async updateTaken(takenAt: number, patch: Partial<Omit<TakenTab, 'takenAt'>>): Promise<void> {
+    const list = await this.taken();
+    const i = list.findIndex((x) => x.takenAt === takenAt);
+    if (i < 0) return;
+    list[i] = { ...list[i], ...patch };
+    await this.kv.set('taken', list);
+  }
   async removeTaken(takenAt: number): Promise<void> {
     await this.kv.set('taken', (await this.taken()).filter((x) => x.takenAt !== takenAt));
   }

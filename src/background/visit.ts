@@ -591,8 +591,7 @@ export class Visits {
     }
     const sessionId = await this.browser.lastClosedSessionId(v.targetUrl);
     if (sessionId) {
-      await this.store.removeTaken(takenAt);
-      await this.store.addTaken({ ...entry, sessionId });
+      await this.store.updateTaken(takenAt, { sessionId });
     }
     const bookkeeping: Partial<RuntimeState> = v.reason === 'stale'
       ? { staleTakes: [...after.staleTakes.filter((t) => takenAt - t < HOUR), takenAt], lastStaleVisitEnd: takenAt }
@@ -615,11 +614,7 @@ export class Visits {
     }
     if (noticeTabId === undefined) return;
     // Remember who was shown the notice, so only that tab can ask for this undo. Saved before sending.
-    const saved = (await this.store.taken()).find((t) => t.takenAt === takenAt);
-    if (saved) {
-      await this.store.removeTaken(takenAt);
-      await this.store.addTaken({ ...saved, noticeTabId });
-    }
+    await this.store.updateTaken(takenAt, { noticeTabId });
     await this.browser.send(noticeTabId, notice);
   }
 

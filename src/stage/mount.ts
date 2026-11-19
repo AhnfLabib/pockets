@@ -200,9 +200,23 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
   const onMove = (e: PointerEvent): void => { pointer = { x: e.clientX, y: e.clientY }; };
   const onOut = (e: PointerEvent): void => { if (!e.relatedTarget) pointer = null; };
   const onBlur = (): void => { pointer = null; };
-  win.addEventListener('pointermove', onMove, { capture: true, passive: true });
-  win.addEventListener('pointerout', onOut, { capture: true, passive: true });
-  win.addEventListener('blur', onBlur);
+  // Listening only while a visit is playing (never in reduced motion): the position is used only in the moment.
+  let listening = false;
+  const attachPointer = (): void => {
+    if (listening) return;
+    listening = true;
+    win.addEventListener('pointermove', onMove, { capture: true, passive: true });
+    win.addEventListener('pointerout', onOut, { capture: true, passive: true });
+    win.addEventListener('blur', onBlur);
+  };
+  const detachPointer = (): void => {
+    pointer = null;
+    if (!listening) return;
+    listening = false;
+    win.removeEventListener('pointermove', onMove, { capture: true });
+    win.removeEventListener('pointerout', onOut, { capture: true });
+    win.removeEventListener('blur', onBlur);
+  };
 
   // One visit at a time.
   let rig: Rig | null = null;
@@ -261,6 +275,7 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
     rig = null;
     visible = false;
     carry = null;
+    detachPointer();
     card.hideNow();
     bubble.hide();
     stopLoop();
@@ -273,6 +288,7 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
       const ac = new AbortController();
       abort = ac;
       reduced = win.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!reduced) attachPointer();
       title = cleanTitle(plan.title);
       color = faviconColorFor(title);
       void readFaviconColor(win, plan.faviconUrl).then((c) => {
@@ -309,6 +325,7 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
           rig = null;
           visible = false;
           carry = null;
+          detachPointer();
           bubble.hide();
           stopLoop();
         }
@@ -323,9 +340,7 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
       cancel();
       notice.hide();
       win.removeEventListener('resize', size);
-      win.removeEventListener('pointermove', onMove, { capture: true });
-      win.removeEventListener('pointerout', onOut, { capture: true });
-      win.removeEventListener('blur', onBlur);
+      detachPointer();
       el.remove();
     },
   };
