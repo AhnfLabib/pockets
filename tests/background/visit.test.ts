@@ -77,7 +77,10 @@ class FakeBrowser implements Browser {
   async lastClosedSessionId(url?: string) { this.sessionUrls.push(url); return this.sessionId; }
   async restore(id: string, url: string) { this.restored.push(id); this.restoredUrls.push(url); return this.restoreOk; }
   async openUrl(url: string) { this.opened.push(url); }
-  async browserFocused() { return this.anyFocused ?? this.focused; }
+  popup = false;
+  async browserFocused() { return this.popup || (this.anyFocused ?? this.focused); }
+  async popupOpen() { return this.popup; }
+  async notificationIds() { return this.created.map((c) => c.id).filter((id, i, a) => a.indexOf(id) === i && !this.cleared.includes(id)); }
   async windowMinimized(id: number) { return this.minimized.has(id); }
   async tabCountInWindow(id: number) { return [...this.tabs.values()].filter((t) => t.windowId === id).length; }
   async createNotification(id: string, n: { title: string; message: string; buttons?: string[] }) {
@@ -935,9 +938,10 @@ describe('Fix round 2: removeTab checks the URL itself', () => {
 
   describe('chrome adapter browserFocused', () => {
     afterEach(() => { delete (globalThis as { chrome?: unknown }).chrome; });
-    function stub(wins: { focused: boolean; type: string }[], fail = false) {
+    function stub(wins: { focused: boolean; type: string }[], fail = false, popups = 0) {
       const asked: unknown[] = [];
       (globalThis as { chrome?: unknown }).chrome = {
+        runtime: { getContexts: async (f: { contextTypes: string[] }) => (f.contextTypes.includes('POPUP') ? Array(popups).fill({}) : []) },
         windows: {
           getAll: async (q?: { windowTypes?: string[] }) => {
             asked.push(q);
@@ -956,6 +960,13 @@ describe('Fix round 2: removeTab checks the URL itself', () => {
       expect(await chromeBrowser.browserFocused()).toBe(true);
       stub([{ focused: false, type: 'normal' }, { focused: false, type: 'popup' }]);
       expect(await chromeBrowser.browserFocused()).toBe(false);
+    });
+    it('Pockets\' own popup open counts as focused, even with no window focused', async () => {
+      stub([{ focused: false, type: 'normal' }], false, 1);
+      expect(await chromeBrowser.browserFocused()).toBe(true);
+      expect(await chromeBrowser.popupOpen()).toBe(true);
+      stub([{ focused: false, type: 'normal' }], false, 0);
+      expect(await chromeBrowser.popupOpen()).toBe(false);
     });
     it('true when it cannot tell', async () => {
       stub([], true);
@@ -1391,23 +1402,55 @@ describe('Visits: pause, resume and the away take (release B)', () => {
       expect(b.removed).toEqual([2]);
     });
 
-    it('back in the browser on another tab, then away again: no second warning; the first deadline still decides', async () => {
+    it('ruling: back in the browser on another tab after the warning withdraws it; away again at the old deadline: nothing taken, a new warning', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      const notifiedAt = now;
+      now += 60_000;
+      b.focused = true;
+      b.tabs.get(1)!.active = false;
+      b.tabs.get(3)!.active = true;
+      await v.onTabActivated(3);
+      let p = (await rt()).visit!.pause!;
+      expect(p.notifiedAt).toBeUndefined();
+      expect(p.notificationId).toBeUndefined();
+      expect(p.notifyTried).toBeUndefined();
+      expect(p.at).toBe(now);
+      expect(b.cleared).toContain(awayId(id));
+      expect(b.alarms.get(DEADLINE_ALARM)).toBe(now + GRACE_MS); // a tab-switch pause from now
+      // Unfocused again exactly at the old deadline.
+      now = notifiedAt + GRACE_MS;
+      b.focused = false;
+      await v.onFocusChanged();
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      expect(b.created.map((c) => c.id)).toEqual([awayId(id), awayId(id)]);
+      p = (await rt()).visit!.pause!;
+      expect(p.notifiedAt).toBe(now);
+      expect(b.alarms.get(DEADLINE_ALARM)).toBe(now + GRACE_MS);
+      now += GRACE_MS - 1;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      now += 1;
+      await v.onDeadline();
+      expect(b.removed).toEqual([2]); // the fresh warning's five minutes, away throughout
+    });
+
+    it('ruling: focus on another tab for a moment, then away until the old deadline: nothing taken at the old deadline', async () => {
       await startShown();
       await leaveBrowser();
       const notifiedAt = now;
       b.focused = true;
       b.tabs.get(1)!.active = false;
       b.tabs.get(3)!.active = true;
-      await v.onTabActivated(3);
-      b.focused = false;
-      now += 60_000;
       await v.onFocusChanged();
-      now += AWAY_CONFIRM_MS;
-      await runTimers();
-      expect(b.created).toHaveLength(1);
+      b.focused = false;
+      await v.onFocusChanged();
       now = notifiedAt + GRACE_MS;
       await v.onDeadline();
-      expect(b.removed).toEqual([2]);
+      expect(b.removed).toEqual([]);
     });
 
     it('the notification cannot be created: never an away take; the visit ends quietly 5 min after leaving', async () => {
@@ -1547,6 +1590,86 @@ describe('Visits: pause, resume and the away take (release B)', () => {
       now += GRACE_MS;
       await v.onDeadline();
       expect(b.removed).toEqual([4]);
+    });
+  });
+
+  describe('Pockets\' own popup', () => {
+    it('popup open with no window focused: no pause, no notification; closing it with the user gone pauses', async () => {
+      const id = await startShown();
+      b.focused = false;
+      b.popup = true;
+      await v.onFocusChanged();
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      let r = await rt();
+      expect(r.visit?.visitId).toBe(id);
+      expect(r.visit?.pause).toBeUndefined();
+      expect(b.created).toEqual([]);
+      expect(b.to(1, 'pockets/cancel')).toEqual([]);
+      // A take while the popup is open goes ahead (the card was confirmed on screen).
+      await v.onEvent(1, id, { type: 'take' });
+      expect(b.removed).toEqual([2]);
+      r = await rt();
+      expect(r.visit).toBeNull();
+    });
+
+    it('the popup closes and no window is focused: the visit pauses and warns', async () => {
+      const id = await startShown();
+      b.focused = false;
+      b.popup = true;
+      await v.onFocusChanged();
+      b.popup = false;
+      await v.onFocusChanged(); // the popup's port disconnected
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      expect((await rt()).visit?.pause).toBeDefined();
+      expect(b.created.map((c) => c.id)).toEqual([awayId(id)]);
+    });
+
+    it('a paused visit with the popup open and the stage not active stays paused; an away deadline cannot take', async () => {
+      await startShown();
+      await leaveBrowser();
+      b.popup = true; // user opened the popup from another tab's window... the browser counts as focused
+      b.tabs.get(1)!.active = false;
+      b.tabs.get(3)!.active = true;
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+    });
+  });
+
+  describe('notification clean-up', () => {
+    it('clicking the body of the "stole" notification is Undo', async () => {
+      await startShown();
+      await leaveBrowser();
+      now += GRACE_MS;
+      await v.onDeadline();
+      const takenAt = (await store.taken())[0].takenAt;
+      await v.onNotificationClicked('pockets-taken:' + takenAt);
+      expect(b.restored).toEqual(['sess-1']);
+      expect(await store.taken()).toEqual([]);
+    });
+
+    it('on wake, a warning left for another visit (or none) is withdrawn; the current visit\'s is kept', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      b.created.push({ id: 'pockets-away:old', title: 't', message: 'm' });
+      make();
+      await v.onWake();
+      expect(b.cleared).toContain('pockets-away:old');
+      expect(b.cleared).not.toContain(awayId(id));
+    });
+
+    it('a warning created by a worker that died before saving it is cleared when the visit resumes', async () => {
+      const id = await startShown();
+      b.focused = false;
+      await v.onFocusChanged(); // paused; the confirm timer is lost with the worker
+      b.created.push({ id: awayId(id), title: 't', message: 'm' }); // created, but notifiedAt never saved
+      make();
+      await v.onWake();
+      b.focused = true;
+      await v.onFocusChanged();
+      expect(b.cleared).toContain(awayId(id));
     });
   });
 

@@ -17,8 +17,11 @@ nothing, the tab is gone and Pockets bolts off the bottom of the screen with it.
 - **Leaving during a visit.** Switch to another tab and Pockets waits (the toolbar badge shows **!**): come back
   and the countdown starts again from the top, with the card back on screen; stay away five minutes and he gives up.
   Leave the browser altogether (another app in front, or the window minimised) and a system notification says
-  "Pockets has his eye on …": come back within five minutes, or click the notification, to keep the tab. Otherwise
-  he takes it without the card, even if you are away from the computer, and a second notification offers **Undo**.
+  "Pockets has his eye on …": come back within five minutes, or click the notification, to keep the tab. Coming back
+  to the browser at all, even to another tab, withdraws the warning (Pockets then waits as for a tab switch, and
+  leaving again starts a new warning and five minutes). Otherwise he takes it without the card, even if you are away
+  from the computer, and a second notification offers **Undo** (its button or a click on it). Both notifications stay
+  until you answer them. Pockets' own toolbar popup counts as being in the browser.
 - **Never taken:** pinned tabs, the tab you are looking at (unless it is distracting and you are working), tabs
   playing sound (stale rule only), tabs you have typed into, and sites on your "never take" list.
 
@@ -100,7 +103,7 @@ project folder.
 | `tabs` | To see each tab's address, title, icon, pinned and audio state, and when it was last opened, which is what makes a tab stale. And to close the tab Pockets takes. |
 | `storage` | To keep your settings, whether working mode is on, and the list of taken tabs, in Chrome's local extension storage on this computer. |
 | `alarms` | To wake Pockets once a minute to check whether a visit is due. Chrome's extension background stops when idle, so a timer alone would not survive. |
-| `idle` | To start a visit only while you are at the computer. (A visit you walk away from is handled by the notification below, not by `idle`.) |
+| `idle` | To start a visit only while you are at the computer. (A visit you walk away from is handled by the notification below, not by `idle`. The five minutes keep counting while the computer sleeps: if they ran out during sleep, the tab is taken when it wakes.) |
 | `notifications` | To warn you before taking a tab while you are away from the browser, and to offer Undo afterwards. |
 | `sessions` | For **Undo** and **Reopen**: restoring a taken tab through Chrome's recently-closed list brings it back in its old place with its back and forward history. |
 | `scripting` | When Pockets is installed or updated, tabs that are already open have none of its page code (Chrome only adds declared content scripts to pages that load afterwards). Pockets adds it to those open web pages once, so they can show Pockets without being reloaded. |

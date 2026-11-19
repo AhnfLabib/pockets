@@ -152,8 +152,18 @@ tab-bar countdown stops, and the toolbar badge shows "!".
   “<title>”. He ran off with it. Undo brings it back.", with an **Undo**
   button that works like the notice's. The take is recorded and paced like
   any other.
-  - At the five-minute mark a browser window is focused but the stage is
-    not in front: nothing is taken, the visit ends quietly.
+  - The user must be away from the browser the whole time since the
+    warning. If any browser window is focused again (even on another tab),
+    the warning is withdrawn and the visit becomes a tab-switch pause from
+    that moment; leaving the browser again brings a fresh warning and a
+    fresh five minutes. So at the deadline a focused browser means nothing
+    is taken.
+  - Both notifications stay until the user answers them. Clicking the
+    "stole" notification is Undo, like its button.
+  - Pockets' own toolbar popup open counts as the user being in the
+    browser: the stage counts as in front if it is its window's active tab.
+  - The five minutes keep counting while the computer sleeps (owner's
+    decision): a deadline that passed during sleep may take on wake.
   - The notification could not be created (no permission, an error): never
     taken while away; treated as a tab switch.
   - The user clicked the notification: never taken while away for that

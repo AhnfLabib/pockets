@@ -42,7 +42,14 @@ chrome.alarms.onAlarm.addListener((a) => {
   else if (a.name === DEADLINE_ALARM) void visits.onDeadline();
 });
 
-// The away warning (click: back to the stage) and the "stole" notification (button 0: Undo).
+// The popup holds a port while open: when it closes, where the stage stands is checked again (an open popup counts as
+// the user being here, see Visits.frontState).
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'pockets-popup' || !isExtensionPage(port.sender?.url, chrome.runtime.getURL(''))) return;
+  port.onDisconnect.addListener(() => { void visits.onFocusChanged(); });
+});
+
+// The away warning (click: back to the stage) and the "stole" notification (body or button 0: Undo).
 chrome.notifications?.onClicked.addListener((id) => { void visits.onNotificationClicked(id); });
 chrome.notifications?.onButtonClicked.addListener((id, index) => { void visits.onNotificationButton(id, index); });
 

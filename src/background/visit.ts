@@ -45,8 +45,13 @@ export interface Browser {
   /** Restore the closed tab, only if that session entry is a tab with this URL; false otherwise. */
   restore(sessionId: string, url: string): Promise<boolean>;
   openUrl(url: string): Promise<void>;
-  /** True when any browser window has focus. When it cannot be told: true (a focused browser never allows an away take). */
+  /** True when any browser window has focus, or Pockets' own toolbar popup is open. When it cannot be told: true (a
+   *  focused browser never allows an away take). */
   browserFocused(): Promise<boolean>;
+  /** True while Pockets' toolbar popup is open (some platforms report no window focused meanwhile). */
+  popupOpen(): Promise<boolean>;
+  /** Ids of the notifications Pockets is showing now. */
+  notificationIds(): Promise<string[]>;
   /** True when the window is minimised. False when unknown. */
   windowMinimized(windowId: number): Promise<boolean>;
   /** How many tabs the window holds; 0 when unknown. */
@@ -157,6 +162,11 @@ export class Visits {
     return this.serial(async () => {
       const rt = await this.store.runtime();
       const v = rt.visit;
+      // A warning left by a dead worker for any other visit (or with no visit) is withdrawn.
+      const keep = v?.pause ? AWAY_NOTIFICATION + v.visitId : null;
+      for (const id of await this.browser.notificationIds()) {
+        if (id.startsWith(AWAY_NOTIFICATION) && id !== keep) await this.browser.clearNotification(id);
+      }
       if (!v) return;
       if (v.pause && v.pause.bootId === (await this.browser.bootId())) await this.reconcile(rt, v);
       else await this.abandon(rt, v);
@@ -198,7 +208,8 @@ export class Visits {
   /** Withdraw a paused visit's warning notification and deadline. */
   private async clearPause(v: ActiveVisit): Promise<void> {
     if (!v.pause) return;
-    if (v.pause.notificationId) await this.browser.clearNotification(v.pause.notificationId);
+    // Cleared by its id even if notificationId was never saved (the worker may have died just after creating it).
+    await this.browser.clearNotification(v.pause.notificationId ?? AWAY_NOTIFICATION + v.visitId);
     await this.browser.clearAlarm(DEADLINE_ALARM);
     this.deadlineTimer = null;
   }
@@ -230,23 +241,29 @@ export class Visits {
     if (await this.stageInFront(v)) return 'front';
     const stage = await this.browser.getTab(v.stageTabId);
     if (!stage) return 'gone';
+    // Pockets' own popup open: the user is right here. The stage counts as in front if it is its window's active tab.
+    if (await this.browser.popupOpen()) {
+      return stage.active && !(await this.browser.windowMinimized(stage.windowId)) ? 'front' : 'tab';
+    }
     if (!(await this.browser.browserFocused())) return 'away';
     if (await this.browser.windowMinimized(stage.windowId)) return 'away';
     return 'tab';
   }
 
-  /** A running visit whose stage is not in front is paused (or abandoned if the stage is gone). True if so. */
+  /** A running visit whose stage is not in front is paused (or abandoned if the stage is gone). True if so. One front
+   *  check decides, so an event is never dropped because the stage came back between two checks. */
   private async pauseIfNotInFront(rt: RuntimeState, v: ActiveVisit): Promise<boolean> {
-    if (await this.stageInFront(v)) return false;
-    await this.reconcile(rt, v);
+    const state = await this.frontState(v);
+    if (state === 'front') return false;
+    await this.reconcile(rt, v, state);
     return true;
   }
 
   private deadline(p: VisitPause): number { return (p.notifiedAt ?? p.at) + this.graceMs; }
 
   /** Bring the visit in line with where the stage stands now: pause, resume, notify, decide at the deadline, or wait. */
-  private async reconcile(rt: RuntimeState, v: ActiveVisit): Promise<void> {
-    const state = await this.frontState(v);
+  private async reconcile(rt: RuntimeState, v: ActiveVisit, known?: Front): Promise<void> {
+    const state = known ?? (await this.frontState(v));
     if (state === 'gone') { await this.abandon(rt, v); return; }
     if (state === 'front') {
       if (v.pause) await this.resume(rt, v);
@@ -254,8 +271,21 @@ export class Visits {
     }
     if (!v.pause) { await this.pause(rt, v, state === 'away'); return; }
     if (!(this.now() < this.deadline(v.pause))) { await this.decide(rt, v); return; }
+    if (state === 'tab' && v.pause.notifyTried) { await this.backInBrowser(rt, v); return; }
     if (state === 'away' && !v.pause.notifyTried) this.confirmAway(v.visitId);
     await this.armDeadline(v);
+  }
+
+  /** Ruling: the away take needs the user away from the browser continuously since the warning. The browser has focus
+   *  again (another tab): withdraw the warning and its deadline; the visit is now a tab-switch pause starting now, and
+   *  leaving the browser again brings a fresh warning and a fresh five minutes. */
+  private async backInBrowser(rt: RuntimeState, v: ActiveVisit): Promise<void> {
+    const p = v.pause!;
+    await this.browser.clearNotification(p.notificationId ?? AWAY_NOTIFICATION + v.visitId);
+    const pause: VisitPause = { at: this.now(), bootId: p.bootId, plan: p.plan, windowId: p.windowId };
+    const next: ActiveVisit = { ...v, pause };
+    await this.store.saveRuntime({ ...rt, visit: next });
+    await this.armDeadline(next);
   }
 
   /** The stage stopped being in front: stop the stage, unmark the target, persist the pause and set the deadline. */
@@ -370,7 +400,7 @@ export class Visits {
   }
 
   private async doNotificationClicked(id: string): Promise<void> {
-    if (id.startsWith(TAKEN_NOTIFICATION)) { await this.browser.clearNotification(id); return; }
+    if (id.startsWith(TAKEN_NOTIFICATION)) { await this.doNotificationButton(id, 0); return; } // the body is Undo too
     if (!id.startsWith(AWAY_NOTIFICATION)) return;
     const rt = await this.store.runtime();
     const v = rt.visit;
@@ -531,16 +561,16 @@ export class Visits {
     // is awaited between this re-read and removeTab, which itself checks the URL once more right before closing.
     // The away path's conditions are checked once more here (the browser may have been focused meanwhile), then the
     // target must not be the only tab in its window.
-    const allowed = path === 'card' || (await this.takeAllowed(v, 'away'));
     const nowRt = await this.store.runtime();
     const typed = nowRt.typedIn.includes(v.targetTabId);
     const settings = path === 'away' ? await this.store.settings() : null;
-    const others = allowed && !typed && windowId !== undefined ? (await this.browser.tabCountInWindow(windowId)) > 1 : false;
+    const others = !typed && windowId !== undefined ? (await this.browser.tabCountInWindow(windowId)) > 1 : false;
     const last = others ? await this.browser.getTab(v.targetTabId) : null;
-    // Away path: pickTarget's per-tab rules once more, on this same re-read (synchronous: nothing awaited before removeTab).
+    // Away path: pickTarget's per-tab rules once more, on this same re-read.
     const eligible = !settings || (!!last && stillEligible(last, v.reason, settings, nowRt, this.now()));
     let closed = false;
-    if (others && eligible && tabMatches(last, v, windowId)) {
+    // Away path: its conditions once more, with the browser-focus query as the very last await before removeTab.
+    if (others && eligible && tabMatches(last, v, windowId) && (path === 'card' || (await this.takeAllowed(v, 'away')))) {
       try {
         closed = await this.browser.removeTab(v.targetTabId, v.targetUrl);
       } catch {

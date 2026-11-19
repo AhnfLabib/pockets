@@ -152,9 +152,26 @@ export const chromeBrowser: Browser = {
     try {
       // Every window type: the default filter is only normal and popup, which would read an undocked DevTools window or
       // an installed web app's window as "away from the browser".
-      return (await chrome.windows.getAll({ windowTypes: ALL_WINDOW_TYPES })).some((w) => w.focused);
+      if ((await chrome.windows.getAll({ windowTypes: ALL_WINDOW_TYPES })).some((w) => w.focused)) return true;
+      return await popupIsOpen();
     } catch {
       return true; // cannot tell: count as focused, which never allows an away take
+    }
+  },
+
+  async popupOpen() {
+    try {
+      return await popupIsOpen();
+    } catch {
+      return false;
+    }
+  },
+
+  async notificationIds() {
+    try {
+      return Object.keys((await chrome.notifications?.getAll()) ?? {});
+    } catch {
+      return [];
     }
   },
 
@@ -181,6 +198,7 @@ export const chromeBrowser: Browser = {
       if ((await chrome.notifications.getPermissionLevel()) !== 'granted') return false;
       const created = await chrome.notifications.create(id, {
         type: 'basic', iconUrl: chrome.runtime.getURL('assets/icons/icon-128.png'), title: n.title, message: n.message,
+        requireInteraction: true, // stays until the user answers it; never fades away on its own
         ...(n.buttons ? { buttons: n.buttons.map((title) => ({ title })) } : {}),
       });
       return created === id;
@@ -248,6 +266,12 @@ export const chromeBrowser: Browser = {
     return boot;
   },
 };
+
+/** Pockets' own toolbar popup is open. Throws if the API is missing (callers decide what that means). */
+async function popupIsOpen(): Promise<boolean> {
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['POPUP' as chrome.runtime.ContextType] });
+  return contexts.length > 0;
+}
 
 const ALL_WINDOW_TYPES: chrome.windows.WindowType[] = ['normal', 'popup', 'panel', 'app', 'devtools'] as chrome.windows.WindowType[];
 
