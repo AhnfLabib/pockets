@@ -33,8 +33,12 @@ interface TestSet {
   runtime?: { lastStaleVisitEnd?: number; lastDistractingTake?: number; staleTakes?: number[] };
   tick?: boolean;
   inject?: boolean;
+  graceMs?: number;
+  away?: boolean;
+  focusChanged?: boolean;
 }
-interface Visit { visitId: string; targetTabId: number; targetUrl: string; stageTabId: number; reason: string; cardShown: boolean }
+interface Visit { visitId: string; targetTabId: number; targetUrl: string; stageTabId: number; reason: string; cardShown: boolean;
+  pause?: { at: number; notifiedAt?: number; notificationId?: string } }
 interface Runtime { working: boolean; typedIn: number[]; spared: Record<string, { until?: number }>; visit: Visit | null }
 interface Taken { title: string; url: string; takenAt: number; reason: string; sessionId?: string; noticeTabId?: number }
 interface Tab { id: number; index: number; url: string; title: string; active: boolean; lastAccessed: number }
@@ -685,4 +689,95 @@ test('same-origin frame and popup: content.js that ran in the initial about:blan
   expect((await runtime(worker))?.typedIn ?? [], 'a freshly loaded popup is not typed in').not.toContain(pop.id);
   await popup.locator('#field').pressSequentially('hello', { delay: 20 });
   await expect.poll(async () => (await runtime(worker))?.typedIn ?? [], { message: 'typing in the popup was reported' }).toContain(pop.id);
+});
+
+// ---- release B: pausing when the stage leaves the front ----
+
+const badgeText = (worker: Worker) => worker.evaluate(() => chrome.action.getBadgeText({})) as Promise<string>;
+const notificationIds = (worker: Worker) =>
+  worker.evaluate(async () => Object.keys(await chrome.notifications.getAll())) as Promise<string[]>;
+
+test('pause: switching to another tab mid-countdown takes nothing; coming back shows the card again and the take completes', async ({ context, worker, server }) => {
+  const s = await threeTabs(context, worker, {
+    target: serve(server, '/pause-target', page('p1')),
+    other: serve(server, '/pause-other', page('other')),
+    stage: serve(server, '/pause-stage', page('stage')),
+  });
+  await expectStaleSetup(worker, s.target.id, s.stage.id);
+
+  expect((await testSet(worker, { settings: QUICK_STALE, tick: true })).ok).toBe(true);
+  const v = await waitVisit(worker, (x) => x.targetTabId === s.target.id, 'a stale visit for the target');
+  await waitVisit(worker, (x) => x.visitId === v.visitId && x.cardShown, 'card-shown on the stage');
+
+  // Switch to the other tab mid-countdown: the visit pauses.
+  await s.otherPage.bringToFront();
+  await waitVisit(worker, (x) => x.visitId === v.visitId && !!x.pause && !x.cardShown, 'the visit paused');
+  await expect.poll(() => badgeText(worker), { message: 'badge "!" while paused' }).toBe('!');
+
+  // Well past the moment the original countdown would have ended: nothing taken, still paused, no notification.
+  await sleep(QUICK_STALE.countdownSeconds * 1000 + 3000);
+  expect((await tabs(worker)).some((t) => t.id === s.target.id), 'the target is still open').toBe(true);
+  expect(await taken(worker)).toEqual([]);
+  expect((await runtime(worker))?.visit).toMatchObject({ visitId: v.visitId, cardShown: false });
+  expect(await notificationIds(worker)).toEqual([]);
+  // The target's title is not left counting down while paused.
+  await expect.poll(async () => (await tabFor(worker, s.target.url)).title).toBe('p1');
+
+  // Back to the stage: the visit resumes under a new id, the card must be confirmed again, then the take completes.
+  await s.stagePage.bringToFront();
+  const resumed = await waitVisit(worker, (x) => x.visitId !== v.visitId && x.targetTabId === s.target.id && !x.pause, 'the visit resumed');
+  await expect.poll(() => badgeText(worker), { message: 'badge cleared on resume' }).toBe('');
+  await waitVisit(worker, (x) => x.visitId === resumed.visitId && x.cardShown, 'card-shown again after the resume');
+  await shot(s.stagePage, 'resumed-card');
+  await expect.poll(async () => (await tabFor(worker, s.target.url).catch(() => ({ title: 'gone' }))).title, { timeout: 5000 })
+    .toMatch(/^(Mine in \d…|gone)$/);
+  await tabGone(worker, s.target.id);
+  await expect.poll(async () => (await taken(worker)).find((t) => t.url === s.target.url)?.noticeTabId).toBe(s.stage.id);
+  await expect.poll(async () => (await runtime(worker))?.visit ?? null).toBeNull();
+});
+
+test('away: left the browser (simulated, test build): one warning notification, the tab is taken after the grace period, Undo on the second notification restores it', async ({ context, worker, server }) => {
+  const s = await threeTabs(context, worker, {
+    target: serve(server, '/away-target', page('a1')),
+    other: serve(server, '/away-other', page('other')),
+    stage: serve(server, '/away-stage', page('stage')),
+  });
+  await expectStaleSetup(worker, s.target.id, s.stage.id);
+  const GRACE = 6000;
+  try {
+    expect((await testSet(worker, { settings: QUICK_STALE, graceMs: GRACE, tick: true })).ok).toBe(true);
+    const v = await waitVisit(worker, (x) => x.targetTabId === s.target.id, 'a stale visit for the target');
+    await waitVisit(worker, (x) => x.visitId === v.visitId && x.cardShown, 'card-shown on the stage');
+
+    // No browser window focused from now on, as when another app comes to the front.
+    expect((await testSet(worker, { away: true, focusChanged: true })).ok).toBe(true);
+    await waitVisit(worker, (x) => x.visitId === v.visitId && !!x.pause, 'the visit paused');
+    await expect.poll(() => badgeText(worker)).toBe('!');
+    const awayId = 'pockets-away:' + v.visitId;
+    await expect.poll(() => notificationIds(worker), { message: 'the warning notification was created' }).toEqual([awayId]);
+    const paused = await waitVisit(worker, (x) => x.visitId === v.visitId && typeof x.pause?.notifiedAt === 'number', 'notifiedAt recorded');
+    const notifiedAt = paused.pause!.notifiedAt!;
+
+    // Not taken before the grace period after the notification; taken once it has passed, without the card.
+    await sleep(Math.max(0, notifiedAt + GRACE - 2000 - (await worker.evaluate(() => Date.now()))));
+    expect((await tabs(worker)).some((t) => t.id === s.target.id), 'not taken before the grace period ends').toBe(true);
+    await tabGone(worker, s.target.id, 20_000);
+    const entry = (await taken(worker)).find((t) => t.url === s.target.url)!;
+    expect(entry).toMatchObject({ title: 'a1', reason: 'stale' });
+    expect(entry.takenAt).toBeGreaterThanOrEqual(notifiedAt + GRACE);
+    expect(entry.noticeTabId).toBeUndefined();
+    const stoleId = 'pockets-taken:' + entry.takenAt;
+    await expect.poll(() => notificationIds(worker), { message: 'the warning is replaced by the "stole" notification' }).toEqual([stoleId]);
+    await expect.poll(async () => (await runtime(worker))?.visit ?? null).toBeNull();
+    await expect.poll(() => badgeText(worker)).toBe('');
+    expect((await tabs(worker)).map((t) => t.id).sort()).toEqual([s.other.id, s.stage.id].sort());
+
+    // Undo: the notification's button handler (headless Chromium shows no notifications to click).
+    await worker.evaluate((id) => (globalThis as any).__pocketsNotificationButton(id, 0), stoleId);
+    await expect.poll(async () => (await tabs(worker)).some((t) => t.url === s.target.url), { message: 'the tab is back' }).toBe(true);
+    await expect.poll(async () => (await taken(worker)).some((t) => t.url === s.target.url)).toBe(false);
+    await expect.poll(() => notificationIds(worker)).toEqual([]);
+  } finally {
+    await testSet(worker, { away: false }).catch(() => {});
+  }
 });
