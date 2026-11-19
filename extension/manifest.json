@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Pockets",
-  "version": "0.1.0",
-  "description": "A small character who takes your stale tabs.",
+  "name": "Pockets: the tab-stealing raccoon",
+  "short_name": "Pockets",
+  "version": "1.0.0",
+  "description": "A hand-drawn raccoon who takes the tabs you forgot about. Warns you first, lets you keep them, and gives them back if you ask.",
   "minimum_chrome_version": "116",
   "permissions": [
     "tabs",
