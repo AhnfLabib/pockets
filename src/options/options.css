@@ -1,0 +1,36 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f6f3; --card: #fff; --text: #1d1d1f; --muted: #66666b; --line: #dcdad4;
+  --accent: #5b4bd6; --accent-text: #fff; --danger: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #17171a; --card: #222226; --text: #ececee; --muted: #a0a0a8; --line: #3a3a40; --accent: #9d90ff; --accent-text: #15151a; --danger: #ff8a80; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.page { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { margin: 0; font-size: 28px; }
+h2 { margin: 0 0 4px; font-size: 18px; }
+.lede, .hint { margin: 4px 0 12px; color: var(--muted); }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; margin-top: 20px; }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
+label { font-weight: 500; }
+input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+input[type="number"] { width: 6rem; text-align: right; }
+input[type="text"] { flex: 1; min-width: 0; }
+button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 6px 12px; }
+button[type="submit"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+input[aria-invalid="true"] { border-color: var(--danger); }
+ul { list-style: none; margin: 0; padding: 0; }
+li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+li:first-child { border-top: 0; }
+li.none { color: var(--muted); }
+.add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.add label { flex-basis: 100%; font-size: 13px; color: var(--muted); font-weight: 400; }
+.error { margin: 6px 0 0; min-height: 0; color: var(--danger); font-size: 13px; }
+.error:empty { display: none; }
+.info { display: flex; flex-direction: column; min-width: 0; }
+.title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { color: var(--muted); font-size: 13px; }
