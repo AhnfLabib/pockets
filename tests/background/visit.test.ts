@@ -77,9 +77,10 @@ class FakeBrowser implements Browser {
   async lastClosedSessionId(url?: string) { this.sessionUrls.push(url); return this.sessionId; }
   async restore(id: string, url: string) { this.restored.push(id); this.restoredUrls.push(url); return this.restoreOk; }
   async openUrl(url: string) { this.opened.push(url); }
-  popup = false;
-  async browserFocused() { return this.popup || (this.anyFocused ?? this.focused); }
-  async popupOpen() { return this.popup; }
+  /** The window Pockets' popup is open in, or null. */
+  popup: number | null = null;
+  async browserFocused() { return this.popup !== null || (this.anyFocused ?? this.focused); }
+  async popupWindowIds() { return this.popup === null ? [] : [this.popup]; }
   async notificationIds() { return this.created.map((c) => c.id).filter((id, i, a) => a.indexOf(id) === i && !this.cleared.includes(id)); }
   async windowMinimized(id: number) { return this.minimized.has(id); }
   async tabCountInWindow(id: number) { return [...this.tabs.values()].filter((t) => t.windowId === id).length; }
@@ -941,7 +942,7 @@ describe('Fix round 2: removeTab checks the URL itself', () => {
     function stub(wins: { focused: boolean; type: string }[], fail = false, popups = 0) {
       const asked: unknown[] = [];
       (globalThis as { chrome?: unknown }).chrome = {
-        runtime: { getContexts: async (f: { contextTypes: string[] }) => (f.contextTypes.includes('POPUP') ? Array(popups).fill({}) : []) },
+        runtime: { getContexts: async (f: { contextTypes: string[] }) => (f.contextTypes.includes('POPUP') ? Array(popups).fill({ windowId: 5 }) : []) },
         windows: {
           getAll: async (q?: { windowTypes?: string[] }) => {
             asked.push(q);
@@ -964,9 +965,9 @@ describe('Fix round 2: removeTab checks the URL itself', () => {
     it('Pockets\' own popup open counts as focused, even with no window focused', async () => {
       stub([{ focused: false, type: 'normal' }], false, 1);
       expect(await chromeBrowser.browserFocused()).toBe(true);
-      expect(await chromeBrowser.popupOpen()).toBe(true);
+      expect(await chromeBrowser.popupWindowIds()).toEqual([5]);
       stub([{ focused: false, type: 'normal' }], false, 0);
-      expect(await chromeBrowser.popupOpen()).toBe(false);
+      expect(await chromeBrowser.popupWindowIds()).toEqual([]);
     });
     it('true when it cannot tell', async () => {
       stub([], true);
@@ -1243,15 +1244,52 @@ describe('Visits: pause, resume and the away take (release B)', () => {
       expect(b.removed).toEqual([]);
     });
 
-    it('a minimised stage window counts as away', async () => {
-      const id = await startShown();
+    it('ruling: a minimised stage window with another browser window focused is a tab switch: no warning', async () => {
+      await startShown();
       b.minimized.add(1);
       b.anyFocused = true;
       b.focused = false; // the minimised window is no longer the focused one
       await v.onFocusChanged();
       now += AWAY_CONFIRM_MS;
       await runTimers();
+      expect((await rt()).visit?.pause).toBeDefined();
+      expect(b.created).toEqual([]);
+    });
+
+    it('ruling: stage window minimised, warned, then work in another browser window, then another app: nothing taken at the old deadline', async () => {
+      const id = await startShown();
+      b.minimized.add(1);
+      b.focused = false;
+      b.anyFocused = false; // minimised and nothing else focused: away
+      await v.onFocusChanged();
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
       expect(b.created.map((c) => c.id)).toEqual([awayId(id)]);
+      const notifiedAt = now;
+      b.anyFocused = true; // the user works in window B
+      await v.onFocusChanged();
+      expect((await rt()).visit!.pause!.notifiedAt).toBeUndefined();
+      expect(b.cleared).toContain(awayId(id));
+      now += 4 * 60_000;
+      b.anyFocused = false; // then switches to another app
+      await v.onFocusChanged();
+      now = notifiedAt + GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+    });
+
+    it('stage window minimised and no browser window focused: warned, and taken at the deadline', async () => {
+      const id = await startShown();
+      b.minimized.add(1);
+      b.focused = false;
+      b.anyFocused = false;
+      await v.onFocusChanged();
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      expect(b.created.map((c) => c.id)).toEqual([awayId(id)]);
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([2]);
     });
 
     it('a no-window-focused blip during a switch between two browser windows sends no notification', async () => {
@@ -1597,7 +1635,7 @@ describe('Visits: pause, resume and the away take (release B)', () => {
     it('popup open with no window focused: no pause, no notification; closing it with the user gone pauses', async () => {
       const id = await startShown();
       b.focused = false;
-      b.popup = true;
+      b.popup = 1;
       await v.onFocusChanged();
       now += AWAY_CONFIRM_MS;
       await runTimers();
@@ -1613,12 +1651,39 @@ describe('Visits: pause, resume and the away take (release B)', () => {
       expect(r.visit).toBeNull();
     });
 
+    it('ruling: popup open in another window while the stage is active in its covered window: a tab-switch pause, no resume, no take', async () => {
+      const id = await startShown();
+      b.focused = false; // window 1 (the stage's) is not focused
+      b.anyFocused = false;
+      b.popup = 2; // the popup is open in window 2
+      await v.onFocusChanged();
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      expect((await rt()).visit?.pause).toBeDefined();
+      expect(b.created).toEqual([]);
+      await v.onEvent(1, id, { type: 'take' });
+      expect(b.removed).toEqual([]);
+    });
+
+    it('ruling: a paused visit does not resume for a popup in another window; it does for a popup in the stage\'s window', async () => {
+      await startShown();
+      await leaveBrowser();
+      b.popup = 2;
+      await v.onFocusChanged();
+      expect((await rt()).visit?.pause).toBeDefined();
+      expect(b.plans(1)).toHaveLength(1);
+      b.popup = 1;
+      await v.onFocusChanged();
+      expect((await rt()).visit?.pause).toBeUndefined();
+      expect(b.plans(1).at(-1)).toMatchObject({ resume: true });
+    });
+
     it('the popup closes and no window is focused: the visit pauses and warns', async () => {
       const id = await startShown();
       b.focused = false;
-      b.popup = true;
+      b.popup = 1;
       await v.onFocusChanged();
-      b.popup = false;
+      b.popup = null;
       await v.onFocusChanged(); // the popup's port disconnected
       now += AWAY_CONFIRM_MS;
       await runTimers();
@@ -1629,7 +1694,7 @@ describe('Visits: pause, resume and the away take (release B)', () => {
     it('a paused visit with the popup open and the stage not active stays paused; an away deadline cannot take', async () => {
       await startShown();
       await leaveBrowser();
-      b.popup = true; // user opened the popup from another tab's window... the browser counts as focused
+      b.popup = 1; // user opened the popup from another tab's window... the browser counts as focused
       b.tabs.get(1)!.active = false;
       b.tabs.get(3)!.active = true;
       now += GRACE_MS;

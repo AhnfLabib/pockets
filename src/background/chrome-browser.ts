@@ -152,18 +152,19 @@ export const chromeBrowser: Browser = {
     try {
       // Every window type: the default filter is only normal and popup, which would read an undocked DevTools window or
       // an installed web app's window as "away from the browser".
-      if ((await chrome.windows.getAll({ windowTypes: ALL_WINDOW_TYPES })).some((w) => w.focused)) return true;
-      return await popupIsOpen();
+      // The popup query first, so the window-focus query is the last await (it sits last before removeTab).
+      if ((await popupWindows()).length > 0) return true;
+      return (await chrome.windows.getAll({ windowTypes: ALL_WINDOW_TYPES })).some((w) => w.focused);
     } catch {
       return true; // cannot tell: count as focused, which never allows an away take
     }
   },
 
-  async popupOpen() {
+  async popupWindowIds() {
     try {
-      return await popupIsOpen();
+      return await popupWindows();
     } catch {
-      return false;
+      return [];
     }
   },
 
@@ -267,10 +268,10 @@ export const chromeBrowser: Browser = {
   },
 };
 
-/** Pockets' own toolbar popup is open. Throws if the API is missing (callers decide what that means). */
-async function popupIsOpen(): Promise<boolean> {
+/** The windows in which Pockets' own toolbar popup is open. Throws if the API is missing (callers decide). */
+async function popupWindows(): Promise<number[]> {
   const contexts = await chrome.runtime.getContexts({ contextTypes: ['POPUP' as chrome.runtime.ContextType] });
-  return contexts.length > 0;
+  return contexts.map((c) => c.windowId);
 }
 
 const ALL_WINDOW_TYPES: chrome.windows.WindowType[] = ['normal', 'popup', 'panel', 'app', 'devtools'] as chrome.windows.WindowType[];

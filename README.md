@@ -16,12 +16,13 @@ nothing, the tab is gone and Pockets bolts off the bottom of the screen with it.
   The popup and the settings page list everything Pockets has taken, with a button to reopen each.
 - **Leaving during a visit.** Switch to another tab and Pockets waits (the toolbar badge shows **!**): come back
   and the countdown starts again from the top, with the card back on screen; stay away five minutes and he gives up.
-  Leave the browser altogether (another app in front, or the window minimised) and a system notification says
+  Leave the browser altogether (another app in front, or every browser window minimised) and a system notification says
   "Pockets has his eye on …": come back within five minutes, or click the notification, to keep the tab. Coming back
   to the browser at all, even to another tab, withdraws the warning (Pockets then waits as for a tab switch, and
   leaving again starts a new warning and five minutes). Otherwise he takes it without the card, even if you are away
   from the computer, and a second notification offers **Undo** (its button or a click on it). Both notifications stay
-  until you answer them. Pockets' own toolbar popup counts as being in the browser.
+  until you answer them. Pockets' own toolbar popup counts as being in the browser (and as the page being in front
+  only when it is opened in that page's window).
 - **Never taken:** pinned tabs, the tab you are looking at (unless it is distracting and you are working), tabs
   playing sound (stale rule only), tabs you have typed into, and sites on your "never take" list.
 

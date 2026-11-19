@@ -21,7 +21,7 @@
 // the stage is told to cancel, the target is unmarked, the badge shows "!", and a deadline alarm is set.
 //   - The stage comes back in front: resume. The visit is replayed under a new visit id (so nothing the old play sent can
 //     count) with the full countdown, and a take again needs a fresh card-shown.
-//   - The user left the browser (no window focused, or the stage's window minimised), confirmed AWAY_CONFIRM_MS later:
+//   - The user left the browser (no browser window focused at all; Pockets' popup counts as focus), confirmed AWAY_CONFIRM_MS later:
 //     one warning notification per away period. Its deadline is notifiedAt + graceMs.
 //   - At the deadline (pause.at + graceMs without a notification): still away with a notification -> away take, with a
 //     second notification offering Undo. Otherwise the visit ends quietly.
@@ -48,8 +48,8 @@ export interface Browser {
   /** True when any browser window has focus, or Pockets' own toolbar popup is open. When it cannot be told: true (a
    *  focused browser never allows an away take). */
   browserFocused(): Promise<boolean>;
-  /** True while Pockets' toolbar popup is open (some platforms report no window focused meanwhile). */
-  popupOpen(): Promise<boolean>;
+  /** The windows in which Pockets' toolbar popup is open now (some platforms report no window focused meanwhile). */
+  popupWindowIds(): Promise<number[]>;
   /** Ids of the notifications Pockets is showing now. */
   notificationIds(): Promise<string[]>;
   /** True when the window is minimised. False when unknown. */
@@ -241,13 +241,16 @@ export class Visits {
     if (await this.stageInFront(v)) return 'front';
     const stage = await this.browser.getTab(v.stageTabId);
     if (!stage) return 'gone';
-    // Pockets' own popup open: the user is right here. The stage counts as in front if it is its window's active tab.
-    if (await this.browser.popupOpen()) {
-      return stage.active && !(await this.browser.windowMinimized(stage.windowId)) ? 'front' : 'tab';
+    // Pockets' own popup open: the user is in the browser. The stage is in front only if the popup is in the stage's
+    // window and the stage is that window's active tab; a popup in any other window is a tab-switch pause.
+    const popups = await this.browser.popupWindowIds();
+    if (popups.length > 0) {
+      return popups.includes(stage.windowId) && stage.active && !(await this.browser.windowMinimized(stage.windowId))
+        ? 'front' : 'tab';
     }
-    if (!(await this.browser.browserFocused())) return 'away';
-    if (await this.browser.windowMinimized(stage.windowId)) return 'away';
-    return 'tab';
+    // Away from the browser means no browser window focused at all. A minimised stage window while another browser
+    // window is focused is a tab switch (and withdraws an outstanding warning, see reconcile).
+    return (await this.browser.browserFocused()) ? 'tab' : 'away';
   }
 
   /** A running visit whose stage is not in front is paused (or abandoned if the stage is gone). True if so. One front

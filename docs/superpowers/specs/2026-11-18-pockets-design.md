@@ -140,8 +140,9 @@ tab-bar countdown stops, and the toolbar badge shows "!".
   starts again from its full length, and the card has to be on screen again
   before anything is taken. Not back within five minutes: the visit ends
   quietly, nothing is closed, and for a stale visit the gap starts.
-- **Away from the browser** (no browser window focused because another app
-  is in front, or the stage's window is minimised): as above, and a system
+- **Away from the browser** (no browser window focused at all, because
+  another app is in front or every window is minimised; Pockets' own popup
+  counts as focus): as above, and a system
   notification fires once for that period away: "Pockets has his eye on
   “<title>”. Come back within 5 minutes to keep this tab, otherwise he'll
   steal it." Clicking it brings the stage back to the front, which resumes
@@ -161,7 +162,12 @@ tab-bar countdown stops, and the toolbar badge shows "!".
   - Both notifications stay until the user answers them. Clicking the
     "stole" notification is Undo, like its button.
   - Pockets' own toolbar popup open counts as the user being in the
-    browser: the stage counts as in front if it is its window's active tab.
+    browser. The stage counts as in front only if the popup is in the
+    stage's window and the stage is that window's active tab; a popup in
+    any other window is a tab-switch pause.
+  - A minimised stage window while another browser window is focused is a
+    tab switch, not "away": no warning, and an outstanding one is
+    withdrawn.
   - The five minutes keep counting while the computer sleeps (owner's
     decision): a deadline that passed during sleep may take on wake.
   - The notification could not be created (no permission, an error): never
