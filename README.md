@@ -53,6 +53,8 @@ npm run e2e -- --trace off
 
 The same hook can shorten the five-minute pause grace period and stand in for "no browser window is focused", which
 headless Chromium cannot produce, and the test build exposes the notification handlers so a test can press Undo.
+In a test build the content script's liveness check also reads `__pocketsTestOrphan` from its isolated world, so a test
+can orphan it the way an extension reload does without killing the service worker.
 A normal `npm run build` leaves all of it out (`grep -rE "pockets/test-set|__pocketsTestSet|__pocketsNotification|pocketsTest" dist` finds nothing), so always
 run a normal build before loading or packaging the extension. `POCKETS_HEADED=1` runs the browser with a window
 (under `xvfb-run -a` on a machine with no display).

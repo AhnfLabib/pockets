@@ -1,10 +1,10 @@
 // The character page: plays one visit with the real stage on a mock browser, for the owner to judge.
 // Built by scripts/build.mjs into dist-harness/, which embeds the sprite sheets as __POCKETS_SPRITES__.
 import { mountStage, type Stage } from '../src/stage/mount';
-import type { SpriteMeta, Sprites } from '../src/stage/render';
+import { loadSprites, type SpriteData } from '../src/stage/render';
 import type { VisitEvent, VisitPlan } from '../src/shared/types';
 
-declare const __POCKETS_SPRITES__: { meta: SpriteMeta; sheets: string[] };
+declare const __POCKETS_SPRITES__: SpriteData;
 
 const ASSETS = '../assets/';
 const TABS: { title: string; color: string; active?: boolean }[] = [
@@ -82,26 +82,16 @@ function markTarget(remaining: number): void {
   t.querySelector('span')!.textContent = `Mine in ${remaining}…`;
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.onerror = () => rej(new Error('could not load a sprite sheet'));
-    img.src = src;
-  });
-}
-
 async function start(): Promise<void> {
   buildTabs();
   const loaded = new Promise<void>((res) => frame.addEventListener('load', () => res(), { once: true }));
   frame.srcdoc = PAGE_DOC;
   await loaded;
-  const sprites: Sprites = {
-    meta: __POCKETS_SPRITES__.meta,
-    sheets: await Promise.all(__POCKETS_SPRITES__.sheets.map(loadImage)),
-  };
-  const stage = await mountStage(frame.contentDocument!, ASSETS, {
+  // The same decoding path the content script uses for the sprites the background serves.
+  const sprites = await loadSprites(__POCKETS_SPRITES__);
+  const stage = await mountStage(frame.contentDocument!, {
     sprites,
+    iconUrl: ASSETS + 'icons/icon-32.png',
     exposeRoot: (root) => { state.root = root; },
   });
   state.stage = stage;

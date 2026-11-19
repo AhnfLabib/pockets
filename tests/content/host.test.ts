@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { startContent, type ContentHandle, type HostEnv } from '../../src/content/host';
+import { assetsFrom, startContent, type ContentHandle, type HostEnv } from '../../src/content/host';
 
 const plan = { visitId: 'v1' } as never;
+
+/** What the background answers to pockets/sprites. */
+const SPRITES = {
+  ok: true,
+  meta: { scale: 2, parts: {} },
+  sheets: ['data:image/png;base64,AAA', 'data:image/png;base64,BBB', 'data:image/png;base64,CCC'],
+  icon: 'data:image/png;base64,ICON',
+};
+const replyTo = (m: { type: string }) => (m.type === 'pockets/sprites' ? SPRITES : undefined);
 
 function fakeStage(connected = true) {
   return { play: vi.fn().mockResolvedValue(undefined), showNotice: vi.fn(), cancel: vi.fn(), destroy: vi.fn(), connected: vi.fn(() => connected) };
@@ -25,9 +34,9 @@ function topWin(): Window {
 function setup(over: Partial<HostEnv> = {}, win: Window = window) {
   let handler!: (m: unknown, r: (x: unknown) => void) => boolean | void;
   const stage = fakeStage();
-  const sendMessage = vi.fn().mockResolvedValue(undefined);
+  const sendMessage = vi.fn(async (m: { type: string }) => replyTo(m));
   const env: HostEnv = {
-    win, doc: document, assetBase: 'x/', iconUrl: 'i', sendMessage,
+    win, doc: document, sendMessage,
     onMessage: (fn) => { handler = fn; },
     mountStage: vi.fn().mockResolvedValue(stage),
     ...over,
@@ -256,5 +265,213 @@ describe('content host: back/forward cache', () => {
     await call({ type: 'pockets/play', plan });
     top.dispatchEvent(pageEvent('pagehide', false));
     expect(stage.cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('content host: sprites come from the background', () => {
+  it('play asks the background for pockets/sprites and mounts with exactly that data', async () => {
+    const { call, sendMessage, env, stage } = setup();
+    expect(await call({ type: 'pockets/play', plan })).toEqual({ ok: true });
+    expect(sent(sendMessage, 'pockets/sprites')).toBe(1);
+    expect(env.mountStage).toHaveBeenCalledWith(document, { meta: SPRITES.meta, sheets: SPRITES.sheets, icon: SPRITES.icon });
+    expect(stage.play).toHaveBeenCalled();
+  });
+
+  it('no usable sprite reply: the mount fails and play replies ok:false; a later play asks again', async () => {
+    const sendMessage = vi.fn()
+      .mockResolvedValueOnce({ ok: false })
+      .mockImplementation(async (m: { type: string }) => replyTo(m));
+    const { call, env } = setup({ sendMessage });
+    expect(await call({ type: 'pockets/play', plan })).toEqual({ ok: false });
+    expect(env.mountStage).not.toHaveBeenCalled();
+    expect(await call({ type: 'pockets/play', plan: { visitId: 'v2' } })).toEqual({ ok: true });
+    expect(sent(sendMessage, 'pockets/sprites')).toBe(2);
+  });
+
+  it('a rejected sprites request (no worker) also gives ok:false', async () => {
+    const { call } = setup({ sendMessage: vi.fn().mockRejectedValue(new Error('no worker')) });
+    expect(await call({ type: 'pockets/play', plan })).toEqual({ ok: false });
+  });
+
+  it('assetsFrom accepts only data: image URLs and three sheets', () => {
+    expect(assetsFrom(SPRITES)).toEqual({ meta: SPRITES.meta, sheets: SPRITES.sheets, icon: SPRITES.icon });
+    expect(assetsFrom({ ...SPRITES, ok: false })).toBeNull();
+    expect(assetsFrom({ ...SPRITES, sheets: SPRITES.sheets.slice(1) })).toBeNull();
+    expect(assetsFrom({ ...SPRITES, sheets: ['chrome-extension://x/a.png', ...SPRITES.sheets.slice(1)] })).toBeNull();
+    expect(assetsFrom({ ...SPRITES, icon: 'https://x/i.png' })).toBeNull();
+    expect(assetsFrom(undefined)).toBeNull();
+  });
+
+  it('the mark uses the icon carried on the message, and marks title-only without one', () => {
+    document.head.innerHTML = '<title>Page</title><link rel="icon" href="/p.ico">';
+    const { handler } = setup();
+    handler()({ type: 'pockets/mark', remaining: 3, icon: 'data:image/png;base64,ICON' }, () => {});
+    expect(document.title).toBe('Mine in 3…');
+    expect(document.querySelector<HTMLLinkElement>('link[rel~="icon"]')!.href).toBe('data:image/png;base64,ICON');
+    handler()({ type: 'pockets/unmark' }, () => {});
+    handler()({ type: 'pockets/mark', remaining: 2 }, () => {});
+    expect(document.title).toBe('Mine in 2…');
+    expect(document.querySelector<HTMLLinkElement>('link[rel~="icon"]')!.getAttribute('href')).toBe('/p.ico');
+    handler()({ type: 'pockets/unmark' }, () => {});
+    expect(document.title).toBe('Page');
+  });
+});
+
+describe('content host: an orphan (extension context dead) shuts itself down', () => {
+  const orphanSetup = (over: Partial<HostEnv> = {}, win: Window = topWin()) => {
+    let alive = true;
+    const r = setup({ alive: () => alive, ...over }, win);
+    return { ...r, kill: () => { alive = false; } };
+  };
+  const type = () => {
+    document.body.innerHTML = '<input id="t">';
+    document.getElementById('t')!.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  it('ignores input, disposes (destroying its stage) and sends nothing', async () => {
+    const { call, kill, sendMessage, stage, handler } = orphanSetup();
+    await call({ type: 'pockets/play', plan });
+    const before = sendMessage.mock.calls.length;
+    kill();
+    type();
+    await flush();
+    expect(sendMessage.mock.calls.length).toBe(before);
+    expect(stage.destroy).toHaveBeenCalledTimes(1);
+    // Disposed: messages are ignored, and later input does nothing either.
+    expect(handler()({ type: 'pockets/ping' }, () => {})).toBe(false);
+    type();
+    await flush();
+    expect(sendMessage.mock.calls.length).toBe(before);
+  });
+
+  it('ignores a pageshow restore (no typed re-report, no stage drop) and disposes', async () => {
+    const top = topWin();
+    const { call, kill, sendMessage, stage } = orphanSetup({}, top);
+    type();
+    await flush();
+    await call({ type: 'pockets/play', plan });
+    const before = sendMessage.mock.calls.length;
+    kill();
+    stage.connected.mockReturnValue(false);
+    top.dispatchEvent(pageEvent('pagehide', true));
+    top.dispatchEvent(pageEvent('pageshow', true));
+    await flush();
+    expect(sendMessage.mock.calls.length).toBe(before);
+    expect(stage.cancel).not.toHaveBeenCalled();
+    expect(stage.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a child frame orphan ignores a pageshow restore too', async () => {
+    const child = childWin();
+    const { kill, sendMessage } = orphanSetup({}, child);
+    type();
+    await flush();
+    expect(sent(sendMessage, 'pockets/typed')).toBe(1);
+    kill();
+    child.dispatchEvent(pageEvent('pageshow', true));
+    await flush();
+    expect(sent(sendMessage, 'pockets/typed')).toBe(1);
+  });
+
+  it('never remounts: a play that arrives after the context died neither asks for sprites nor mounts', async () => {
+    const { handler, kill, sendMessage, env } = orphanSetup();
+    kill();
+    const respond = vi.fn();
+    expect(handler()({ type: 'pockets/play', plan }, respond)).toBe(false);
+    await flush();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(env.mountStage).not.toHaveBeenCalled();
+    expect(respond).not.toHaveBeenCalled();
+  });
+
+  it('a context that dies while the sprites are in flight mounts nothing and replies ok:false', async () => {
+    let resolve!: (v: unknown) => void;
+    const sendMessage = vi.fn(() => new Promise((r) => { resolve = r; }));
+    const { call, kill, env } = orphanSetup({ sendMessage });
+    const p = call({ type: 'pockets/play', plan });
+    kill();
+    resolve(SPRITES);
+    expect(await p).toEqual({ ok: false });
+    expect(env.mountStage).not.toHaveBeenCalled();
+  });
+
+  it('a context that dies during the mount destroys the new stage', async () => {
+    let resolve!: (s: unknown) => void;
+    const fresh = fakeStage();
+    const { call, kill } = orphanSetup({ mountStage: vi.fn(() => new Promise((r) => { resolve = r; })) as never });
+    const p = call({ type: 'pockets/play', plan });
+    await flush();
+    kill();
+    resolve(fresh);
+    expect(await p).toEqual({ ok: false });
+    expect(fresh.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('a stage event emitted after the context died is not sent; the instance disposes', async () => {
+    const { call, kill, sendMessage, stage } = orphanSetup();
+    await call({ type: 'pockets/play', plan });
+    const emit = stage.play.mock.calls[0][1] as (e: unknown) => void;
+    const before = sendMessage.mock.calls.length;
+    kill();
+    emit({ type: 'alive' });
+    await flush();
+    expect(sendMessage.mock.calls.length).toBe(before);
+    expect(stage.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops the typing-report retry loop', async () => {
+    let alive = true;
+    const sendMessage = vi.fn().mockRejectedValue(new Error('no worker'));
+    setup({ typingUnknown: true, sendMessage, retryMs: 5, alive: () => alive }, topWin());
+    await flush();
+    expect(sent(sendMessage, 'pockets/typed')).toBe(1);
+    alive = false;
+    await new Promise((r) => setTimeout(r, 60));
+    expect(sent(sendMessage, 'pockets/typed')).toBe(1);
+  });
+
+  it('a probe that throws counts as dead', async () => {
+    const { sendMessage } = setup({ alive: () => { throw new Error('Extension context invalidated.'); } }, topWin());
+    type();
+    await flush();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('the title observer disposes the orphan, which puts back the page title it set and the page icon', async () => {
+    document.head.innerHTML = '<title>Page</title><link rel="icon" href="/p.ico">';
+    const { handler, kill, sendMessage } = orphanSetup();
+    handler()({ type: 'pockets/mark', remaining: 3, icon: 'data:image/png;base64,ICON' }, () => {});
+    expect(document.title).toBe('Mine in 3…');
+    kill();
+    document.title = 'Page, new title';
+    await flush();
+    expect(document.title).toBe('Page, new title');
+    const links = document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]');
+    expect(links.length).toBe(1);
+    expect(links[0].getAttribute('href')).toBe('/p.ico');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('an idle orphan with a marked tab notices on its own and restores the untouched title and icon', async () => {
+    document.head.innerHTML = '<title>Page</title><link rel="icon" href="/p.ico">';
+    const { handler, kill, sendMessage } = orphanSetup({ watchMs: 5 });
+    handler()({ type: 'pockets/mark', remaining: 3, icon: 'data:image/png;base64,ICON' }, () => {});
+    await new Promise((r) => setTimeout(r, 20));
+    expect(document.title).toBe('Mine in 3…');
+    kill();
+    await vi.waitFor(() => expect(document.title).toBe('Page'));
+    expect(document.querySelector<HTMLLinkElement>('link[rel~="icon"]')!.getAttribute('href')).toBe('/p.ico');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('a live instance keeps its mark against the page title and is not disposed by the watch', async () => {
+    document.head.innerHTML = '<title>Page</title>';
+    const { handler } = orphanSetup({ watchMs: 5 });
+    handler()({ type: 'pockets/mark', remaining: 3, icon: 'data:image/png;base64,ICON' }, () => {});
+    document.title = 'Page, new title';
+    await new Promise((r) => setTimeout(r, 20));
+    expect(document.title).toBe('Mine in 3…');
+    handler()({ type: 'pockets/unmark' }, () => {});
+    expect(document.title).toBe('Page, new title');
   });
 });

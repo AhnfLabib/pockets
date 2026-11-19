@@ -9,6 +9,7 @@ import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
 import { canUndo, isExtensionPage, pageLoadedTab } from './sender';
 import { chromeInjectApi, injectIntoOpenTabs } from './inject';
+import { AssetCache, chromeAssetFiles } from './assets';
 import type { RuntimeState, Settings, ToBackground } from '../shared/types';
 
 /** True only in a test build (POCKETS_TEST=1, see scripts/build.mjs). A normal build drops every `if` on it. */
@@ -17,8 +18,13 @@ declare const __POCKETS_TEST__: boolean;
 const ALARM = 'pockets-tick';
 
 const store = new Store(chromeKV);
+/** Sprites and the mark icon as data URLs, read once from the package (content scripts never load extension URLs). */
+const assets = new AssetCache(chromeAssetFiles);
 /** A copy, so a test build can stand in for focus (see the test-only block below). */
 const browser: Browser = { ...chromeBrowser };
+// The tab mark carries its icon as a data URL; without one (unreadable), the target gets a title-only mark.
+browser.send = async (tabId, msg) =>
+  chromeBrowser.send(tabId, msg.type === 'pockets/mark' ? { ...msg, icon: await assets.icon().catch(() => undefined) } : msg);
 const visits = new Visits(browser, store, () => Date.now(), () => crypto.randomUUID());
 
 // Worker start: a running visit belongs to a dead worker. Cancel and unmark it; close nothing. A paused visit from this
@@ -70,6 +76,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (msg.type === 'pockets/ping') {
     sendResponse({ type: 'pockets/pong', from: 'background' });
     return false;
+  }
+  // The stage's sprites, for this extension's own content scripts. Answered outside the visit queue: the queued step that
+  // sends pockets/play is waiting on the mount this reply feeds.
+  if (msg.type === 'pockets/sprites') {
+    if (sender.id !== chrome.runtime.id || sender.tab?.id === undefined) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    void assets.spritesReply().then(sendResponse, () => sendResponse({ ok: false }));
+    return true;
   }
   const m = msg as ToBackground;
   // Only our own pages (popup, options) may change settings-like state; content scripts run on web pages.

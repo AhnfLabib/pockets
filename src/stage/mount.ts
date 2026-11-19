@@ -3,7 +3,7 @@
 // with `all: initial` plus important inline styles so page rules cannot hide or move it.
 import { Rig } from './rig/rig';
 import type { Pt } from './rig/chain';
-import { drawPose, loadSprites, type Sprites } from './render';
+import { drawPose, type Sprites } from './render';
 import { Card, Notice, STAGE_CSS } from './card';
 import { runVisit, type Carry } from './sequence';
 import type { VisitEvent, VisitPlan } from '../shared/types';
@@ -22,8 +22,10 @@ export interface Stage {
 export interface StageOptions {
   /** Randomness for the rig and the path jitter. Defaults to Math.random. */
   rand?: () => number;
-  /** Sprites already loaded. Without it they are loaded from `assetBase + 'sprites/'`. */
-  sprites?: Sprites;
+  /** Decoded sprites (render.ts loadSprites). The stage never loads anything from the extension package itself. */
+  sprites: Sprites;
+  /** The notice's icon, a data: URL (or, on the character page, a file next to it). */
+  iconUrl: string;
   /** Hands over the closed shadow root. For the character page and its e2e test only. */
   exposeRoot?: (root: ShadowRoot) => void;
 }
@@ -152,15 +154,12 @@ function drawFallingTab(ctx: CanvasRenderingContext2D, at: Pt, angle: number, ti
   ctx.restore();
 }
 
-/**
- * Mount the stage on `host` (the page's document). `assetBase` ends in '/' and holds sprites/ and icons/.
- * Resolves once the sprites are loaded.
- */
-export async function mountStage(host: Document, assetBase: string, opts: StageOptions = {}): Promise<Stage> {
+/** Mount the stage on `host` (the page's document), with sprites and the notice icon already in hand. */
+export async function mountStage(host: Document, opts: StageOptions): Promise<Stage> {
   const win = host.defaultView;
   if (!win) throw new Error('Pockets: the stage needs a document with a window');
   const rand = opts.rand ?? Math.random;
-  const sprites = opts.sprites ?? (await loadSprites(assetBase + 'sprites/'));
+  const sprites = opts.sprites;
 
   const el = host.createElement('pockets-stage');
   for (const [k, v] of Object.entries(HOST_STYLE)) el.style.setProperty(k, v, 'important');
@@ -174,7 +173,7 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
   wrap.appendChild(canvas);
   root.append(style, wrap);
   const card = new Card(host, wrap);
-  const notice = new Notice(host, wrap, assetBase + 'icons/icon-32.png');
+  const notice = new Notice(host, wrap, opts.iconUrl);
   (host.documentElement ?? host.body).appendChild(el);
   opts.exposeRoot?.(root);
 
