@@ -125,7 +125,7 @@ export class Card implements CardView {
   show(at: { left: number; top: number }, text: { title: string; sub: string }, onKeep: () => void): Promise<boolean> {
     const token = ++this.showToken;
     const win = this.doc.defaultView!;
-    clearTimeout(this.leaveTimer);
+    win.clearTimeout(this.leaveTimer);
     this.onKeep = onKeep;
     this.title.textContent = text.title;
     this.sub.textContent = text.sub;
@@ -180,7 +180,7 @@ export class Card implements CardView {
     }
     this.el.classList.add('leaving');
     this.keep.tabIndex = -1;
-    clearTimeout(this.leaveTimer);
+    this.doc.defaultView!.clearTimeout(this.leaveTimer);
     this.leaveTimer = this.doc.defaultView!.setTimeout(() => {
       this.el.hidden = true;
       this.el.classList.remove('leaving');
@@ -192,7 +192,7 @@ export class Card implements CardView {
   hideNow(): void {
     this.showToken++;
     this.onKeep = null;
-    clearTimeout(this.leaveTimer);
+    this.doc.defaultView?.clearTimeout(this.leaveTimer);
     this.el.hidden = true;
     this.el.classList.remove('leaving');
     this.keep.removeAttribute('tabindex');

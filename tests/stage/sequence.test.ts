@@ -161,7 +161,8 @@ describe('runVisit on a large viewport with a moving rig', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('never jumps (no 9 s steering timeout) climbing 1080 px and crossing to the last tab at 1920 px', async () => {
+  /** Run one visit with a moving rig; return the events and the largest per-frame head move. */
+  async function movingVisit(seed: number, width: number, height: number, keep: boolean) {
     const rigs: Rig[] = [];
     let maxStep = 0;
     let prev: Pt | null = null;
@@ -174,22 +175,40 @@ describe('runVisit on a large viewport with a moving rig', () => {
       }
     }, 1000 / 60);
     const events: VisitEvent[] = [];
+    const card = fakeCard();
     const ac = new AbortController();
-    const p = runVisit(plan({ tabIndex: 11, tabCount: 12 }), (e) => events.push(e), {
+    const p = runVisit(plan({ tabIndex: 11, tabCount: 12 }), (e) => {
+      events.push(e);
+      if (keep && e.type === 'tick' && e.remaining === 2) card.pressKeep();
+    }, {
       createRig: (start, heading) => {
-        const r = new Rig({ start, heading, rand: seeded(5) });
+        const r = new Rig({ start, heading, rand: seeded(seed) });
         rigs.push(r);
         return r;
       },
-      card: fakeCard(), view: { width: 1920, height: 1080 }, reduced: false, rand: seeded(9), signal: ac.signal, setCarry: () => {},
+      card, view: { width, height }, reduced: false, rand: seeded(seed + 1000), signal: ac.signal, setCarry: () => {},
     });
-    await vi.advanceTimersByTimeAsync(90_000);
+    await vi.advanceTimersByTimeAsync(180_000);
     await p;
     clearInterval(timer);
-    expect(types(events)).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'take', 'done']);
-    // The bolt runs at 400 px/s: under 7 px a frame. A timeout teleport would jump hundreds of px.
-    expect(maxStep).toBeLessThan(15);
-  });
+    return { events: types(events), maxStep };
+  }
+
+  // The rig abandons a path after 9 s by teleporting to its end. A jump would be hundreds of px; the bolt
+  // at 400 px/s moves under 7 px a frame.
+  for (const [w, h] of [[1920, 1080], [2560, 1440], [3840, 2160]]) {
+    it(`never jumps at ${w}x${h}, crossing to the last tab, over 30 seeds and both endings`, async () => {
+      for (let seed = 1; seed <= 30; seed++) {
+        for (const keep of [false, true]) {
+          const r = await movingVisit(seed, w, h, keep);
+          expect(r.events, `seed ${seed} keep ${keep}`).toEqual(
+            keep ? ['card-shown', 'tick 3', 'tick 2', 'keep', 'done'] : ['card-shown', 'tick 3', 'tick 2', 'tick 1', 'take', 'done'],
+          );
+          expect(r.maxStep, `seed ${seed} keep ${keep}`).toBeLessThan(15);
+        }
+      }
+    }, 120_000);
+  }
 });
 
 describe('estimateTabX', () => {

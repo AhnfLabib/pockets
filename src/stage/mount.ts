@@ -60,11 +60,11 @@ export function faviconColorFor(title: string): string {
 }
 
 /**
- * The favicon's main colour, when the image can be read (same-origin or data: URLs). Cross-origin favicons
- * taint the canvas, so those, and failures, resolve null and the title's colour is used instead.
+ * The favicon's main colour, read only from a data: URL so the stage never makes a network request (the
+ * extension makes none). Anything else, or a failure, resolves null and the title's colour is used instead.
  */
 export function readFaviconColor(win: Window, url: string | undefined): Promise<string | null> {
-  if (!url) return Promise.resolve(null);
+  if (!url || !url.startsWith('data:')) return Promise.resolve(null);
   return new Promise((res) => {
     const img = win.document.createElement('img');
     const timer = win.setTimeout(() => res(null), 800);

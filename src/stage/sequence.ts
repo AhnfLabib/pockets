@@ -59,9 +59,9 @@ const CROUCH_MS = 300;
 const SPRING = 1.12;
 const KEPT_MS = 1500;
 const BORDER_X = 30;
-/** Longest path handed to one travel() call, in seconds at full speed. Rests stretch it by about a third,
+/** Longest path handed to one travel() call, in seconds at full speed. Rests and easing stretch it (worst seen 6.3 s over 120 seeded runs),
  *  which keeps each call clear of the rig's 9 s steering timeout (it teleports to the end). */
-const CHUNK_SECONDS = 4.5;
+const CHUNK_SECONDS = 4;
 
 /**
  * Where a tab's centre probably is, in viewport px. Extensions cannot read the tab strip, so this models
