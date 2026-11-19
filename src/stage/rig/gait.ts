@@ -1,4 +1,5 @@
 import type { Pt } from './chain';
+import { TEMPO } from './tempo';
 
 export interface Foot { pos: Pt; from: Pt; to: Pt; t: number; stepping: boolean; threshold: number }
 /** Unit vectors `fwd` and `side` at a body node (front = shoulders, rear = hips). */
@@ -37,7 +38,8 @@ export function createFeet(front: BodyFrame, rear: BodyFrame): Foot[] {
   });
 }
 
-/** Advance the four feet one tick: each stays planted until its home drifts past its threshold, then steps. */
+/** Advance the four feet one tick: each stays planted until its home drifts past its threshold, then steps.
+ *  `opts.slow` stretches the step time (tiptoe); `opts.skip` leaves one foot to the caller. */
 export function stepGait(
   feet: Foot[],
   front: BodyFrame,
@@ -46,9 +48,12 @@ export function stepGait(
   reaching: boolean,
   dt: number,
   rand: () => number,
+  opts: { slow?: number; skip?: number } = {},
 ): void {
-  const dur = speed > 250 ? 0.05 : 0.12;
+  // Step time shrinks with the tempo so the feet keep up with the faster body instead of sliding.
+  const dur = ((speed > 250 ? 0.05 : 0.12) / TEMPO) * (opts.slow ?? 1);
   for (let i = 0; i < 4; i++) {
+    if (i === opts.skip) continue; // a paw lifted by a quirk: the rig places it
     const f = feet[i];
     const home = footHome(i as 0 | 1 | 2 | 3, front, rear, reaching);
     const d = Math.hypot(f.pos.x - home.x, f.pos.y - home.y);

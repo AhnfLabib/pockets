@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createSteer, stepSteer } from '../../../src/stage/rig/steer';
+import { TEMPO } from '../../../src/stage/rig/tempo';
 
 const DT = 1 / 60;
 const rand = () => 0.5;
@@ -46,10 +47,10 @@ describe('steer', () => {
     for (let i = 0; i < last; i++) if (r.times[i] > 0.3) expect(r.speeds[i]).toBeGreaterThan(0);
   });
 
-  it('eases: speed never changes by more than base * 11 * dt in a step', () => {
+  it('eases: speed never changes by more than base * 11 * TEMPO * dt in a step', () => {
     for (const rest of [true, false]) {
       const r = run(rest);
-      expect(r.maxJump).toBeLessThanOrEqual(150 * 11 * DT + 1e-9);
+      expect(r.maxJump).toBeLessThanOrEqual(150 * 11 * TEMPO * DT + 1e-9);
     }
   });
 
