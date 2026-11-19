@@ -20,7 +20,8 @@ async function open(page: Page): Promise<string[]> {
 const snapshot = (page: Page): Promise<Snapshot> =>
   page.evaluate(() => {
     const s = (window as any).__pockets;
-    return { events: s.events.slice(), card: s.cardAtShown };
+    // alive is the stage's keep-awake ping during a long climb; these specs check the visible choreography.
+    return { events: s.events.filter((e: string) => e !== 'alive'), card: s.cardAtShown };
   });
 
 async function waitForEvent(page: Page, name: string, timeout = 45_000): Promise<void> {

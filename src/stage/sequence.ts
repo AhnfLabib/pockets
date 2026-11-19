@@ -61,6 +61,9 @@ const CROUCH_MS = 300;
 const SPRING = 1.12;
 const KEPT_MS = 1500;
 const BORDER_X = 30;
+/** How often the stage says it is still playing, from play until card-shown. MV3 stops a service worker that has
+ *  heard nothing for about 30 s, and a long climb on a big screen sends no other event. */
+export const ALIVE_MS = 10_000;
 
 /**
  * Where a tab's centre probably is, in viewport px. Extensions cannot read the tab strip, so this models
@@ -92,9 +95,24 @@ export function cardPosition(tx: number, width: number, reduced: boolean): { lef
  * Events: card-shown (only once the card is on screen), tick N … tick 1 a second apart, then either keep
  * (when Keep is clicked) or take (one second after tick 1), and done once Pockets has gone. If the card is not on
  * screen when the take is due (say the page opened a modal dialog over it), hidden is emitted instead of take and
- * the visit ends there, with no done.
+ * the visit ends there, with no done. From play until card-shown, alive is emitted every ten seconds so the
+ * background's service worker is not stopped mid-climb; it stops on card-shown, on abort and when the visit ends.
  */
 export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: SequenceDeps): Promise<void> {
+  const { signal } = deps;
+  if (signal.aborted) return;
+  const timer = setInterval(() => { if (!signal.aborted) emit({ type: 'alive' }); }, ALIVE_MS);
+  const stopAlive = (): void => clearInterval(timer);
+  signal.addEventListener('abort', stopAlive, { once: true });
+  try {
+    await playVisit(plan, emit, deps, stopAlive);
+  } finally {
+    stopAlive();
+    signal.removeEventListener('abort', stopAlive);
+  }
+}
+
+async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: SequenceDeps, stopAlive: () => void): Promise<void> {
   const { signal, card, view, rand } = deps;
   const W = view.width;
   const H = view.height;
@@ -222,6 +240,7 @@ export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, d
   async function countdown(r: RigLike): Promise<'keep' | 'take' | 'cancelled'> {
     const shown = await orAbort(card.show(at, text, onKeep), false);
     if (!shown || !live()) return 'cancelled';
+    stopAlive(); // the ticks keep the worker awake from here
     out({ type: 'card-shown' });
     counting = true;
     for (let n = total; n >= 1; n--) {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Rig } from '../../src/stage/rig/rig';
 import type { Pt } from '../../src/stage/rig/chain';
-import { estimateTabX, runVisit, type CardView, type SequenceDeps } from '../../src/stage/sequence';
+import { estimateTabX, runVisit, type CardView, type RigLike, type SequenceDeps } from '../../src/stage/sequence';
 import type { VisitEvent, VisitPlan } from '../../src/shared/types';
 
 function seeded(seed: number): () => number {
@@ -75,8 +75,11 @@ function setup(opts: { reduced?: boolean } = {}) {
   return { deps, card, events, travels, ac, stop: () => clearInterval(timer), emit: (e: VisitEvent) => events.push(e) };
 }
 
-const types = (events: VisitEvent[]): string[] =>
+/** Every event, alive included. */
+const allTypes = (events: VisitEvent[]): string[] =>
   events.map((e) => (e.type === 'tick' ? `tick ${e.remaining}` : e.type));
+/** The choreography: the keep-awake alive pings (every 10 s until card-shown) are left out; they have their own tests. */
+const types = (events: VisitEvent[]): string[] => allTypes(events).filter((t) => t !== 'alive');
 
 describe('runVisit', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -181,12 +184,14 @@ describe('runVisit', () => {
     const p = runVisit(plan(), s.emit, s.deps).then(() => { resolved = true; });
     await vi.advanceTimersByTimeAsync(30_000); // climb done, stuck at show()
     expect(resolved).toBe(false);
+    const before = s.events.length;
     s.ac.abort();
-    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(60_000);
     s.stop();
     expect(resolved).toBe(true);
     await p;
-    expect(s.events).toEqual([]);
+    expect(types(s.events)).toEqual([]);
+    expect(s.events.length, 'nothing at all after the abort, not even alive').toBe(before);
   });
 
   it('resolves promptly when aborted mid-travel even if the rig never answers', async () => {
@@ -298,5 +303,69 @@ describe('estimateTabX', () => {
   it('moves right as the index grows', () => {
     const xs = [0, 1, 2, 3, 4].map((i) => estimateTabX(i, 5, 1200));
     for (let i = 1; i < xs.length; i++) expect(xs[i]).toBeGreaterThan(xs[i - 1]);
+  });
+});
+
+describe('runVisit keep-awake (alive)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** A rig whose climb leg (the second travel) takes `climbMs`; every other leg arrives at once. */
+  function slowRig(climbMs: number, arrive = true): RigLike {
+    let n = 0;
+    return {
+      travel: () => new Promise<boolean>((res) => { n++; const climb = n === 2; setTimeout(() => res(climb ? arrive : true), climb ? climbMs : 0); }),
+      setLook() {}, setReach() {}, setStretch() {},
+    };
+  }
+
+  function run(rig: RigLike) {
+    const s = setup();
+    s.deps.createRig = () => rig;
+    const at: { type: string; t: number }[] = [];
+    const t0 = Date.now();
+    let resolved = false;
+    const p = runVisit(plan(), (e) => { s.emit(e); at.push({ type: e.type, t: Date.now() - t0 }); }, s.deps).then(() => { resolved = true; });
+    return { s, at, p, resolved: () => resolved };
+  }
+
+  it('emits alive every 10 s from play start during a long climb, and stops after card-shown', async () => {
+    const r = run(slowRig(45_000));
+    await vi.advanceTimersByTimeAsync(120_000);
+    await r.p;
+    r.s.stop();
+    const shownAt = r.at.find((e) => e.type === 'card-shown')!.t;
+    expect(shownAt).toBeGreaterThan(45_000);
+    const alive = r.at.filter((e) => e.type === 'alive').map((e) => e.t);
+    expect(alive).toEqual([10_000, 20_000, 30_000, 40_000]);
+    expect(alive.every((t) => t < shownAt)).toBe(true);
+    expect(allTypes(r.s.events).slice(-6)).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'take', 'done']);
+  });
+
+  it('stops on cancel', async () => {
+    const r = run(slowRig(45_000));
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(allTypes(r.s.events)).toEqual(['alive', 'alive']);
+    r.s.ac.abort();
+    await vi.advanceTimersByTimeAsync(60_000);
+    r.s.stop();
+    expect(r.resolved()).toBe(true);
+    expect(allTypes(r.s.events)).toEqual(['alive', 'alive']);
+  });
+
+  it('stops when the visit ends early without an abort (a leg that does not arrive)', async () => {
+    const r = run(slowRig(15_000, false));
+    await vi.advanceTimersByTimeAsync(120_000);
+    r.s.stop();
+    expect(r.resolved()).toBe(true);
+    expect(allTypes(r.s.events)).toEqual(['alive']);
+  });
+
+  it('a short visit sends no alive at all', async () => {
+    const r = run(slowRig(0));
+    await vi.advanceTimersByTimeAsync(120_000);
+    await r.p;
+    r.s.stop();
+    expect(allTypes(r.s.events)).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'take', 'done']);
   });
 });

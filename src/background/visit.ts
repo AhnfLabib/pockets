@@ -240,6 +240,9 @@ export class Visits {
       case 'done':
         if (memo?.takePending) await this.completeStageTake(visitId);
         return;
+      case 'alive':
+        // The stage is still climbing: lastEventAt was refreshed above, nothing else to do.
+        return;
       case 'hidden':
         // The card was not on screen when the take was due (say, under a modal dialog): as if abandoned.
         // Cancel, unmark, close nothing, spare nothing; a stale visit still starts the gap.

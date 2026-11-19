@@ -955,3 +955,51 @@ describe('Visits: the card was hidden when the take was due', () => {
     expect(r.lastStaleVisitEnd).toBe(0);
   });
 });
+
+describe('Visits: alive during a long climb', () => {
+  /** A 50 s climb, then (at 61 s) the minute alarm's tick, then card-shown, the countdown and the take. */
+  async function longClimb(sendAlive: boolean): Promise<string> {
+    await v.tick();
+    const id = await visitId();
+    const sentBefore = b.sent.length;
+    for (let s = 10; s <= 50; s += 10) {
+      now = T0 + s * 1000;
+      if (sendAlive) await v.onEvent(1, id, { type: 'alive' });
+    }
+    if (sendAlive) {
+      // alive refreshes the silence clock and does nothing else.
+      expect(b.sent.length).toBe(sentBefore);
+      expect((await rt()).visit).toMatchObject({ visitId: id, cardShown: false });
+    }
+    now = T0 + 61_000;
+    await v.tick();
+    now = T0 + 62_000;
+    await v.onEvent(1, id, { type: 'card-shown' });
+    for (const n of [3, 2, 1]) { now += 1000; await v.onEvent(1, id, { type: 'tick', remaining: n }); }
+    now += 1000;
+    await v.onEvent(1, id, { type: 'take' });
+    return id;
+  }
+
+  it('keeps the visit across a 50 s climb with alive every 10 s; the take then closes the target', async () => {
+    await longClimb(true);
+    expect(b.removed).toEqual([2]);
+    expect(b.to(1, 'pockets/cancel')).toEqual([]);
+  });
+
+  it('control: the same climb without alive is abandoned at the 61 s tick and closes nothing', async () => {
+    const id = await longClimb(false);
+    expect(b.removed).toEqual([]);
+    expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
+    expect((await rt()).visit).toBeNull();
+  });
+
+  it('alive from a tab other than the stage does not refresh the visit', async () => {
+    await v.tick();
+    const id = await visitId();
+    for (let s = 10; s <= 50; s += 10) { now = T0 + s * 1000; await v.onEvent(3, id, { type: 'alive' }); }
+    now = T0 + 61_000;
+    await v.tick();
+    expect((await rt()).visit).toBeNull();
+  });
+});

@@ -3,7 +3,7 @@
 export interface VisitPlan { visitId: string; targetTabId: number; title: string; faviconUrl?: string; reason: 'stale' | 'distracting';
                              reasonText: string; tabIndex: number; tabCount: number; countdownSeconds: number; targetIsStage: boolean }
 export type VisitEvent = { type: 'card-shown' } | { type: 'tick'; remaining: number } | { type: 'keep' } | { type: 'take' } | { type: 'done' } | { type: 'undo' }
-                       | { type: 'hidden' };
+                       | { type: 'hidden' } | { type: 'alive' };
 
 export interface TabInfo { id: number; windowId: number; index: number; url: string; title: string; favIconUrl?: string;
                            active: boolean; pinned: boolean; audible: boolean; discarded: boolean; lastAccessed: number }
