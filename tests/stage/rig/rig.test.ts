@@ -100,6 +100,28 @@ describe('rig', () => {
     expect(b).toBe(true);
   });
 
+  it('a long path at low speed does not teleport before 2x its expected time', async () => {
+    const r = mk(4);
+    const path = [{ x: 0, y: 400 }, { x: 600, y: 400 }, { x: 600, y: 1000 }]; // ~1600 px from (0,0)
+    const speed = 60; // expected ~27 s, far past the default 9 s
+    let arrived: boolean | null = null;
+    void r.travel(path, speed).then((a) => { arrived = a; });
+    let prev = r.pose().nodes[0];
+    let maxStep = 0;
+    let t = 0;
+    while (arrived === null && t < 60) {
+      r.update(DT);
+      t += DT;
+      await Promise.resolve();
+      const h = r.pose().nodes[0];
+      maxStep = Math.max(maxStep, Math.hypot(h.x - prev.x, h.y - prev.y));
+      prev = h;
+    }
+    expect(arrived).toBe(true);
+    expect(maxStep).toBeLessThan(5); // 60 px/s is 1 px a frame; a teleport is hundreds
+    expect(t).toBeGreaterThan(1600 / speed); // it walked the whole way
+  });
+
   it('pose() returns copies of the feet', () => {
     const r = mk();
     const p = r.pose();

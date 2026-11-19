@@ -11,12 +11,14 @@ export interface Steer {
   lookTarget: number;
   phase: number;
   elapsed: number;
+  /** Seconds before the safety net abandons the path by jumping to its end. Rig.travel sets it per path. */
+  timeout: number;
 }
 
 export function createSteer(heading: number): Steer {
   return {
     heading, speed: 0, path: [], base: 0, rest: false,
-    burst: 0.75, pause: 0, lookTarget: 0, phase: 0, elapsed: 0,
+    burst: 0.75, pause: 0, lookTarget: 0, phase: 0, elapsed: 0, timeout: 9,
   };
 }
 
@@ -48,7 +50,7 @@ export function stepSteer(
   s.elapsed += dt;
 
   // Safety net: abandon the path by jumping to its end.
-  if (s.elapsed > 9) {
+  if (s.elapsed > s.timeout) {
     const end = s.path[s.path.length - 1];
     head.x = end.x;
     head.y = end.y;

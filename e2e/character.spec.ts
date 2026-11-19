@@ -125,3 +125,36 @@ test('stage isolation: closed root, pointer passes through, nothing takes focus'
   expect(info.focusable).toEqual(['keep']);
   await page.evaluate(() => (window as any).__pockets.stage.cancel());
 });
+
+/** Start a visit straight on the stage with requestAnimationFrame stubbed to never call back (as in a hidden
+ *  tab), cancel it, and report whether play() settled and what was emitted. */
+async function cancelWithoutFrames(page: Page): Promise<{ settled: boolean; events: string[] }> {
+  return page.evaluate(async () => {
+    const win = (document.getElementById('page') as HTMLIFrameElement).contentWindow!;
+    win.requestAnimationFrame = () => 0;
+    const stage = (window as any).__pockets.stage;
+    const events: string[] = [];
+    let settled = false;
+    const plan = { visitId: 'nf', targetTabId: 2, title: 'YouTube', reason: 'stale', reasonText: 'not opened for 2 days',
+      tabIndex: 2, tabCount: 5, countdownSeconds: 5, targetIsStage: false };
+    const p = stage.play(plan, (e: { type: string }) => events.push(e.type)).then(() => { settled = true; });
+    await new Promise((r) => setTimeout(r, 500));
+    const before = settled;
+    stage.cancel();
+    await Promise.race([p, new Promise((r) => setTimeout(r, 1000))]);
+    return { settled: !before && settled, events };
+  });
+}
+
+test('cancel with no animation frames (hidden tab) while the card waits to show: play resolves, nothing emitted', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' }); // no crawl: play goes straight to the card's show()
+  const errors = await open(page);
+  expect(await cancelWithoutFrames(page)).toEqual({ settled: true, events: [] });
+  expect(errors).toEqual([]);
+});
+
+test('cancel with no animation frames (hidden tab) mid-climb: play resolves, nothing emitted', async ({ page }) => {
+  const errors = await open(page);
+  expect(await cancelWithoutFrames(page)).toEqual({ settled: true, events: [] });
+  expect(errors).toEqual([]);
+});

@@ -77,6 +77,8 @@ export class Card implements CardView {
   private keep: HTMLButtonElement;
   private onKeep: (() => void) | null = null;
   private showToken = 0;
+  /** Settles the pending show() with false; hide() and hideNow() call it so cancel never waits on rAF. */
+  private settleShow: (() => void) | null = null;
   private leaveTimer = 0;
 
   constructor(private doc: Document, parent: Node) {
@@ -123,6 +125,7 @@ export class Card implements CardView {
   }
 
   show(at: { left: number; top: number }, text: { title: string; sub: string }, onKeep: () => void): Promise<boolean> {
+    this.settleShow?.();
     const token = ++this.showToken;
     const win = this.doc.defaultView!;
     win.clearTimeout(this.leaveTimer);
@@ -140,9 +143,19 @@ export class Card implements CardView {
     // Force layout now, then wait for two frames: rAF only runs while the page is visible and the second one
     // comes after the card has been painted. Re-check on every frame until it is really on screen.
     void this.el.getBoundingClientRect();
-    return new Promise((res) => {
+    return new Promise((resolve) => {
+      let settled = false;
+      const res = (v: boolean): void => {
+        if (settled) return;
+        settled = true;
+        if (this.settleShow === cancelShow) this.settleShow = null;
+        resolve(v);
+      };
+      const cancelShow = (): void => res(false);
+      this.settleShow = cancelShow;
       let frames = 0;
       const step = (): void => {
+        if (settled) return;
         if (token !== this.showToken || this.el.hidden) return res(false);
         frames++;
         if (frames >= 2 && onScreen(this.el)) {
@@ -171,6 +184,7 @@ export class Card implements CardView {
 
   hide(): void {
     this.showToken++;
+    this.settleShow?.();
     this.onKeep = null;
     if (this.el.hidden) return;
     const reduced = this.doc.defaultView?.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -191,6 +205,7 @@ export class Card implements CardView {
   /** Hide at once, without the fade (cancel and destroy). */
   hideNow(): void {
     this.showToken++;
+    this.settleShow?.();
     this.onKeep = null;
     this.doc.defaultView?.clearTimeout(this.leaveTimer);
     this.el.hidden = true;

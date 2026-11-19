@@ -59,9 +59,6 @@ const CROUCH_MS = 300;
 const SPRING = 1.12;
 const KEPT_MS = 1500;
 const BORDER_X = 30;
-/** Longest path handed to one travel() call, in seconds at full speed. Rests and easing stretch it (worst seen 6.3 s over 120 seeded runs),
- *  which keeps each call clear of the rig's 9 s steering timeout (it teleports to the end). */
-const CHUNK_SECONDS = 4;
 
 /**
  * Where a tab's centre probably is, in viewport px. Extensions cannot read the tab strip, so this models
@@ -86,32 +83,6 @@ export function cardPosition(tx: number, width: number, reduced: boolean): { lef
   let left = tx + 34;
   if (left + w > width - CARD_MARGIN) left = tx - 34 - w;
   return { left: Math.max(CARD_MARGIN, Math.min(width - CARD_MARGIN - w, left)), top: CARD_TOP };
-}
-
-/** Split `path` (starting from `from`) into runs no longer than `maxLen`, cutting long segments. */
-export function chunkPath(from: Pt, path: Pt[], maxLen: number): Pt[][] {
-  const chunks: Pt[][] = [];
-  let cur: Pt[] = [];
-  let len = 0;
-  let prev = from;
-  for (const p of path) {
-    const d = Math.hypot(p.x - prev.x, p.y - prev.y);
-    const pieces = Math.max(1, Math.ceil(d / maxLen));
-    for (let k = 1; k <= pieces; k++) {
-      const q = k === pieces ? p : { x: prev.x + ((p.x - prev.x) * k) / pieces, y: prev.y + ((p.y - prev.y) * k) / pieces };
-      const step = d / pieces;
-      if (len + step > maxLen + 1e-9 && cur.length) {
-        chunks.push(cur);
-        cur = [];
-        len = 0;
-      }
-      cur.push(q);
-      len += step;
-    }
-    prev = p;
-  }
-  if (cur.length) chunks.push(cur);
-  return chunks;
 }
 
 /**
@@ -152,6 +123,22 @@ export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, d
       if (untilKeep) wakeKeep = done;
     });
 
+  /** Settle with `p`, or with `onAbort` as soon as the visit is cancelled, whichever comes first. Hidden tabs
+   *  pause requestAnimationFrame, so the card's show() and the rig's travel() may otherwise never settle. */
+  const orAbort = <T>(p: Promise<T>, onAbort: T): Promise<T> =>
+    new Promise<T>((res) => {
+      if (!live()) return res(onAbort);
+      const stop = (): void => res(onAbort);
+      signal.addEventListener('abort', stop, { once: true });
+      p.then((v) => {
+        signal.removeEventListener('abort', stop);
+        res(v);
+      }, () => {
+        signal.removeEventListener('abort', stop);
+        res(onAbort);
+      });
+    });
+
   const tx = estimateTabX(plan.tabIndex, plan.tabCount, W);
   const at = cardPosition(tx, W, deps.reduced);
   const total = Math.max(1, Math.round(plan.countdownSeconds));
@@ -182,15 +169,12 @@ export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, d
 
   const rig = deps.createRig({ x: BORDER_X, y: H + 36 }, -Math.PI / 2);
   deps.setVisible?.(true);
-  let here: Pt = { x: BORDER_X, y: H + 36 };
+  // One travel() per leg, as in the mock. The rig's steering timeout scales with the path, so a long leg
+  // on a big screen is not cut short.
   const go = async (path: Pt[], speed: number, rest?: boolean): Promise<boolean> => {
-    for (const chunk of chunkPath(here, path, speed * CHUNK_SECONDS)) {
-      if (!live()) return false;
-      const arrived = await rig.travel(chunk, speed, rest === undefined ? undefined : { rest });
-      if (!arrived || !live()) return false;
-      here = chunk[chunk.length - 1];
-    }
-    return true;
+    if (!live()) return false;
+    const arrived = await orAbort(rig.travel(path, speed, rest === undefined ? undefined : { rest }), false);
+    return arrived && live();
   };
   const jx = (): number => BORDER_X + (rand() * 2 - 1) * CLIMB_JITTER;
 
@@ -232,7 +216,7 @@ export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, d
 
   /** Show the card, run the countdown and settle keep or take. The card is hidden on take. */
   async function countdown(r: RigLike): Promise<'keep' | 'take' | 'cancelled'> {
-    const shown = await card.show(at, text, onKeep);
+    const shown = await orAbort(card.show(at, text, onKeep), false);
     if (!shown || !live()) return 'cancelled';
     out({ type: 'card-shown' });
     counting = true;

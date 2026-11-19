@@ -142,6 +142,40 @@ describe('runVisit', () => {
     expect(types(s.events)).toEqual(['card-shown', 'tick 3', 'tick 2']);
   });
 
+  it('resolves with no card-shown and no further events when aborted while the card can never show', async () => {
+    // Models a hidden tab: requestAnimationFrame never fires, so the card's show() never settles by itself.
+    const s = setup();
+    s.deps.card.show = () => new Promise<boolean>(() => {});
+    let resolved = false;
+    const p = runVisit(plan(), s.emit, s.deps).then(() => { resolved = true; });
+    await vi.advanceTimersByTimeAsync(30_000); // climb done, stuck at show()
+    expect(resolved).toBe(false);
+    s.ac.abort();
+    await vi.advanceTimersByTimeAsync(10);
+    s.stop();
+    expect(resolved).toBe(true);
+    await p;
+    expect(s.events).toEqual([]);
+  });
+
+  it('resolves promptly when aborted mid-travel even if the rig never answers', async () => {
+    const s = setup();
+    const create = s.deps.createRig;
+    s.deps.createRig = (start, heading) => {
+      const rig = create(start, heading);
+      rig.travel = () => new Promise<boolean>(() => {});
+      return rig;
+    };
+    let resolved = false;
+    void runVisit(plan(), s.emit, s.deps).then(() => { resolved = true; });
+    await vi.advanceTimersByTimeAsync(1000);
+    s.ac.abort();
+    await vi.advanceTimersByTimeAsync(10);
+    s.stop();
+    expect(resolved).toBe(true);
+    expect(s.events).toEqual([]);
+  });
+
   it('jitters the three climb waypoints by at most 7 px around x = 30', async () => {
     for (const seed of [1, 2, 3, 4, 5, 6]) {
       const s = setup();
@@ -194,8 +228,9 @@ describe('runVisit on a large viewport with a moving rig', () => {
     return { events: types(events), maxStep };
   }
 
-  // The rig abandons a path after 9 s by teleporting to its end. A jump would be hundreds of px; the bolt
-  // at 400 px/s moves under 7 px a frame.
+  // Each leg is one travel() call. The rig abandons a path by teleporting to its end once its per-path timeout
+  // (2x the path at full speed, at least 9 s) runs out. A jump would be hundreds of px; the bolt at 400 px/s
+  // moves under 7 px a frame.
   for (const [w, h] of [[1920, 1080], [2560, 1440], [3840, 2160]]) {
     it(`never jumps at ${w}x${h}, crossing to the last tab, over 30 seeds and both endings`, async () => {
       for (let seed = 1; seed <= 30; seed++) {

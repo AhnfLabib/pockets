@@ -65,6 +65,21 @@ describe('steer', () => {
     expect(s.path).toHaveLength(0);
   });
 
+  it('defaults the timeout to 9 s and honours a longer per-path timeout', () => {
+    expect(createSteer(0).timeout).toBe(9);
+    const s = createSteer(0);
+    const head = { x: 0, y: 0 };
+    s.path = [{ x: 5000, y: 0 }];
+    s.base = 10;
+    s.timeout = 30;
+    s.elapsed = 9;
+    expect(stepSteer(s, head, DT, 0, rand).arrived).toBe(false);
+    expect(head.x).toBeLessThan(10);
+    s.elapsed = 30;
+    expect(stepSteer(s, head, DT, 0, rand).arrived).toBe(true);
+    expect(head).toEqual({ x: 5000, y: 0 });
+  });
+
   it('applies the 9 s timeout to the whole path, not per waypoint', () => {
     const s = createSteer(0);
     const head = { x: 0, y: 0 };

@@ -72,6 +72,14 @@ export class Rig {
       s.path = path.map((p) => ({ x: p.x, y: p.y }));
       s.base = speed;
       s.elapsed = 0;
+      // The safety net allows twice the path's length at full speed, and never less than 9 s.
+      let len = 0;
+      let prev = this.nodes[0];
+      for (const p of s.path) {
+        len += Math.hypot(p.x - prev.x, p.y - prev.y);
+        prev = p;
+      }
+      s.timeout = Math.max(9, speed > 0 ? (2 * len) / speed : 9);
       s.rest = (opts?.rest ?? true) && speed < 250;
       s.burst = 0.5 + this.rand() * 0.5;
     });
