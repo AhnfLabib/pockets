@@ -60,9 +60,13 @@ run a normal build before loading or packaging the extension. `POCKETS_HEADED=1`
 7. Optional: right-click the icon and choose **Options** to change the stale time, the gap between visits, the
    number of stale tabs per hour, the countdown, and the distracting and "never take" lists.
 
-Tabs that were already open when Pockets was installed have no Pockets code in them until they are reloaded: they
-cannot be the page Pockets is drawn on, show the countdown on their tab, or report typing. Such a tab counts as not
-typed in, so reload any tab holding unsaved work if you want that protection.
+Tabs that were already open when Pockets was installed or updated get Pockets' page code added straight away
+(web pages only; Chrome's own pages, the Web Store and sleeping (discarded) tabs cannot take it). They can be the page
+Pockets is drawn on at once. Pockets cannot know whether you typed into such a page before it arrived, so it treats
+each of them as typed in: a tab that was open at install is never taken as stale or distracting until it next loads
+a page (a reload, or going to another address). A sleeping tab gets the code when it wakes and reloads, and counts as
+not typed in. Re-enabling Pockets after turning it off does not add the code to open tabs; reload them, or they stay
+without Pockets until they next load a page.
 
 After changing the code, run `npm run build` again and click the reload arrow on Pockets' card in
 `chrome://extensions`.
@@ -90,7 +94,7 @@ project folder.
 | `alarms` | To wake Pockets once a minute to check whether a visit is due. Chrome's extension background stops when idle, so a timer alone would not survive. |
 | `idle` | To visit only while you are at the computer. Nothing is taken while you are away, because you would not see the warning. |
 | `sessions` | For **Undo** and **Reopen**: restoring a taken tab through Chrome's recently-closed list brings it back in its old place with its back and forward history. |
-| `scripting` | Listed in the design for running Pockets' code in a tab. This version does not call it: Pockets' page code is declared in the manifest as a content script. It is a candidate for removal. |
+| `scripting` | When Pockets is installed or updated, tabs that are already open have none of its page code (Chrome only adds declared content scripts to pages that load afterwards). Pockets adds it to those open web pages once, so they can show Pockets without being reloaded. |
 | All sites (`<all_urls>`) | Pockets is drawn on top of whatever page you are looking at, the countdown is shown on the target tab's own title and icon, and each page reports whether you have typed into it. That needs Pockets' content script on every site. |
 
 ## Privacy

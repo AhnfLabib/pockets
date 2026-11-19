@@ -27,8 +27,11 @@ export const DIST = resolve(process.cwd(), 'dist');
 export async function launchExtensionContext(
   userDataDir: string,
   extraArgs: string[] = [],
+  /** Playwright default arguments to leave out, e.g. '--disable-back-forward-cache' for a bfcache test. */
+  ignoreDefaultArgs: string[] = [],
 ): Promise<BrowserContext> {
   return chromium.launchPersistentContext(userDataDir, {
+    ...(ignoreDefaultArgs.length ? { ignoreDefaultArgs } : {}),
     // The full Chromium build in headless mode ("new headless") can load extensions.
     channel: 'chromium',
     // POCKETS_HEADED=1 runs headed (use under xvfb-run -a in a container). Results match headless.

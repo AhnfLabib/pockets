@@ -6,6 +6,7 @@ import { Store, clearTyped, forgetTab, setWorking } from './store';
 import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
 import { canUndo, isExtensionPage, pageLoadedTab } from './sender';
+import { chromeInjectApi, injectIntoOpenTabs } from './inject';
 import type { RuntimeState, Settings, ToBackground } from '../shared/types';
 
 /** True only in a test build (POCKETS_TEST=1, see scripts/build.mjs). A normal build drops every `if` on it. */
@@ -27,6 +28,13 @@ void store.runtime().then((rt) => paintBadge(rt.working)).catch(() => {});
 void visits.onWake();
 
 chrome.runtime.onStartup.addListener(() => { void visits.onWake(); });
+
+// Tabs open before install or update have no content script until they load a page: add it now, so they can host a
+// visit at once. Each such tab reports itself typed in (its typing so far is unknown), so it is not taken until it
+// next loads a page. Browser startup needs nothing: restored tabs load, and the declared scripts run in them.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install' || details.reason === 'update') void injectIntoOpenTabs(chromeInjectApi);
+});
 
 void chrome.alarms.get(ALARM).then((a) => {
   if (!a) void chrome.alarms.create(ALARM, { periodInMinutes: 1 });
@@ -74,6 +82,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'pockets/page-loaded': {
       // "Typed into since the page loaded": the top frame started on a new document (load or reload), so typing
       // reported for the previous document no longer protects the tab. The new page reports again if typed into.
+      // Sent by content-start.js at document_start, so it always precedes any typing report for that document.
       const loaded = pageLoadedTab(sender);
       if (loaded !== undefined) void visits.updateRuntime((rt) => clearTyped(rt, loaded));
       break;
@@ -116,6 +125,8 @@ if (__POCKETS_TEST__) {
     settings?: Partial<Settings>;
     runtime?: Partial<Pick<RuntimeState, 'lastStaleVisitEnd' | 'lastDistractingTake' | 'staleTakes'>>;
     tick?: boolean;
+    /** Run the install-time injection into open tabs now (it otherwise runs only on install or update). */
+    inject?: boolean;
   };
   const KEY = 'pocketsTestSettings';
   const readOverrides = async (): Promise<Partial<Settings>> => {
@@ -125,7 +136,7 @@ if (__POCKETS_TEST__) {
   const realSettings = store.settings.bind(store);
   store.settings = async () => ({ ...(await realSettings()), ...(await readOverrides()) });
 
-  const testSet = async (p: TestSet): Promise<{ ok: boolean }> => {
+  const testSet = async (p: TestSet): Promise<{ ok: boolean; injected?: number[] }> => {
     if (p.settings) await chrome.storage.local.set({ [KEY]: { ...(await readOverrides()), ...p.settings } });
     const r = p.runtime;
     if (r) {
@@ -137,6 +148,7 @@ if (__POCKETS_TEST__) {
       }));
     }
     if (p.tick) await visits.tick();
+    if (p.inject) return { ok: true, injected: await injectIntoOpenTabs(chromeInjectApi) };
     return { ok: true };
   };
   (globalThis as unknown as { __pocketsTestSet: typeof testSet }).__pocketsTestSet = testSet;
