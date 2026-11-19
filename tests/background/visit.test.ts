@@ -648,7 +648,7 @@ describe('Fix round 1', () => {
       const r = await rt();
       expect(r.visit).toBeNull();
       expect(r.spared).toEqual({});
-      expect(r.lastStaleVisitEnd).toBe(0); // the next tick may try again
+      expect(r.lastStaleVisitEnd).toBe(now); // a stale visit still starts the gap
       expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
       expect(b.to(2, 'pockets/unmark')).toHaveLength(1);
       await v.onEvent(1, id, { type: 'take' });
@@ -694,11 +694,33 @@ describe('Fix round 1', () => {
       expect((await rt()).visit).toBeNull();
       await v.onEvent(1, id, { type: 'take' });
       expect(b.removed).toEqual([]);
-      // and the next tick can try again
+      // after the gap the next tick can try again
       b.tabs.get(3)!.active = false;
       b.tabs.get(1)!.active = true;
+      now += 5 * 60_000;
       await v.tick();
       expect(b.to(1, 'pockets/play')).toHaveLength(2);
+    });
+
+    it('a stale visit cancelled by switching away starts the gap: no visit 1 min later, one 5 min later', async () => {
+      await startShown();
+      const cancelledAt = now;
+      b.tabs.get(1)!.active = false;
+      b.tabs.get(3)!.active = true;
+      await v.onTabActivated(3);
+      expect(b.removed).toEqual([]);
+      expect((await rt()).spared).toEqual({});
+      b.tabs.get(3)!.active = false;
+      b.tabs.get(1)!.active = true;
+      now = cancelledAt + 60_000;
+      await v.tick();
+      expect(b.to(1, 'pockets/play')).toHaveLength(1);
+      expect((await rt()).visit).toBeNull();
+      now = cancelledAt + 5 * 60_000;
+      await v.tick();
+      expect(b.to(1, 'pockets/play')).toHaveLength(2);
+      expect((await rt()).visit).not.toBeNull();
+      expect(b.removed).toEqual([]);
     });
 
     it('focus change while the stage stays in front leaves the visit alone', async () => {

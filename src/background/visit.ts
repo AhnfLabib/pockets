@@ -109,18 +109,18 @@ export class Visits {
 
   private memoFor(v: ActiveVisit): Memo | null { return this.memo && this.memo.visitId === v.visitId ? this.memo : null; }
 
-  /** Clear the visit and save. A started stale visit counts for the gap between visits unless `countGap` is false. */
-  private async end(rt: RuntimeState, v: ActiveVisit, countGap = true): Promise<RuntimeState> {
+  /** Clear the visit and save. Any started stale visit counts for the gap between visits. */
+  private async end(rt: RuntimeState, v: ActiveVisit): Promise<RuntimeState> {
     const next: RuntimeState = { ...rt, visit: null };
-    if (countGap && v.reason === 'stale') next.lastStaleVisitEnd = this.now();
+    if (v.reason === 'stale') next.lastStaleVisitEnd = this.now();
     this.memo = null;
     await this.store.saveRuntime(next);
     return next;
   }
 
   /** Cancel on the stage and unmark the target, best-effort. Closes nothing. */
-  private async abandon(rt: RuntimeState, v: ActiveVisit, countGap = true): Promise<void> {
-    await this.end(rt, v, countGap);
+  private async abandon(rt: RuntimeState, v: ActiveVisit): Promise<void> {
+    await this.end(rt, v);
     await this.browser.send(v.targetTabId, { type: 'pockets/unmark' });
     await this.browser.send(v.stageTabId, { type: 'pockets/cancel', visitId: v.visitId });
   }
@@ -131,10 +131,11 @@ export class Visits {
     return !!win && win.tabs.some((t) => t.id === v.stageTabId && t.active && t.windowId === win.windowId);
   }
 
-  /** The user switched away from the stage: cancel, unmark, close nothing, spare nothing; the next tick may try again. */
+  /** The user switched away from the stage: cancel, unmark, close nothing, spare nothing. A stale visit still starts the gap,
+   *  so frequent tab switching cannot bring Pockets back every minute. */
   private async abandonIfStageHidden(rt: RuntimeState, v: ActiveVisit): Promise<boolean> {
     if (await this.stageInFront(v)) return false;
-    await this.abandon(rt, v, false);
+    await this.abandon(rt, v);
     return true;
   }
 
