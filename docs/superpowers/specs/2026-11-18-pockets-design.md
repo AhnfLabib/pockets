@@ -205,7 +205,8 @@ tab-bar countdown stops, and the toolbar badge shows "!".
   "never taken" rules apply on both paths. If notifications are silenced by
   the operating system (Do Not Disturb, Focus), the browser still reports
   them as shown, so path 2 can take a tab whose warning the user did not
-  see; Undo in the popup remains.
+  see; Undo in the popup remains. Windows the extension cannot see (incognito
+  unless allowed, other profiles) count as "not focused".
 - **The target cannot run extensions or is asleep** (Chrome's memory saver
   discards background tabs): the climb and card play on the stage, but the
   target's icon and title cannot change. This may be frequent for stale

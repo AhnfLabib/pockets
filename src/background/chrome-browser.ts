@@ -150,7 +150,9 @@ export const chromeBrowser: Browser = {
 
   async browserFocused() {
     try {
-      return (await chrome.windows.getAll()).some((w) => w.focused);
+      // Every window type: the default filter is only normal and popup, which would read an undocked DevTools window or
+      // an installed web app's window as "away from the browser".
+      return (await chrome.windows.getAll({ windowTypes: ALL_WINDOW_TYPES })).some((w) => w.focused);
     } catch {
       return true; // cannot tell: count as focused, which never allows an away take
     }
@@ -246,6 +248,8 @@ export const chromeBrowser: Browser = {
     return boot;
   },
 };
+
+const ALL_WINDOW_TYPES: chrome.windows.WindowType[] = ['normal', 'popup', 'panel', 'app', 'devtools'] as chrome.windows.WindowType[];
 
 /** chrome.storage.session lives as long as the browser run (cleared on a browser restart or extension reload). */
 const BOOT_KEY = 'pocketsBootId';

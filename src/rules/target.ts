@@ -32,3 +32,19 @@ export function pickTarget(
     .sort((a, b) => a.lastAccessed - b.lastAccessed);
   return stale.length > 0 ? { tab: stale[0], reason: 'stale' } : null;
 }
+
+/**
+ * Whether a visit's target still passes the per-tab rules pickTarget applied when the visit started. Re-checked before
+ * an away take, which happens five minutes or more after the pick: the tab may have started playing sound, the user may
+ * have edited the lists, or working mode may be off. (The window rules, the URL and typing are re-checked by the visit.)
+ */
+export function stillEligible(t: TabInfo, reason: Reason, s: Settings, rt: RuntimeState, now: number): boolean {
+  if (t.pinned || rt.typedIn.includes(t.id) || matchesSite(t.url, s.neverTake)) return false;
+  if (reason === 'distracting') {
+    return rt.working && matchesSite(t.url, s.distracting) && rt.spared[t.id]?.workingSince !== rt.workingSince;
+  }
+  return !t.audible && !t.active
+    && !((rt.spared[t.id]?.until ?? 0) > now)
+    && !(rt.working && rt.spared[t.id]?.workingSince === rt.workingSince)
+    && now - t.lastAccessed > s.staleHours * 3600_000;
+}

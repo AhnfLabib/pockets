@@ -933,6 +933,36 @@ describe('Fix round 2: removeTab checks the URL itself', () => {
     expect(canCloseTab(null, u)).toBe(false);
   });
 
+  describe('chrome adapter browserFocused', () => {
+    afterEach(() => { delete (globalThis as { chrome?: unknown }).chrome; });
+    function stub(wins: { focused: boolean; type: string }[], fail = false) {
+      const asked: unknown[] = [];
+      (globalThis as { chrome?: unknown }).chrome = {
+        windows: {
+          getAll: async (q?: { windowTypes?: string[] }) => {
+            asked.push(q);
+            if (fail) throw new Error('nope');
+            const types = q?.windowTypes ?? ['normal', 'popup']; // the API's default filter
+            return wins.filter((w) => types.includes(w.type));
+          },
+        },
+      };
+      return asked;
+    }
+    it('counts every window type: a focused DevTools or web-app window is not "away"', async () => {
+      stub([{ focused: false, type: 'normal' }, { focused: true, type: 'devtools' }]);
+      expect(await chromeBrowser.browserFocused()).toBe(true);
+      stub([{ focused: false, type: 'normal' }, { focused: true, type: 'app' }]);
+      expect(await chromeBrowser.browserFocused()).toBe(true);
+      stub([{ focused: false, type: 'normal' }, { focused: false, type: 'popup' }]);
+      expect(await chromeBrowser.browserFocused()).toBe(false);
+    });
+    it('true when it cannot tell', async () => {
+      stub([], true);
+      expect(await chromeBrowser.browserFocused()).toBe(true);
+    });
+  });
+
   describe('chrome adapter removeTab', () => {
     afterEach(() => { delete (globalThis as { chrome?: unknown }).chrome; });
     function stub(tabUrl: string) {
@@ -1440,6 +1470,50 @@ describe('Visits: pause, resume and the away take (release B)', () => {
         expect(await store.taken(), spoil).toEqual([]);
         expect((await rt()).visit, spoil).toBeNull();
       }
+    });
+
+    it('the target now breaks a pickTarget rule at the deadline (sound, never-take list, list edited, working off): nothing removed', async () => {
+      const cases = ['audible', 'neverTake', 'notDistracting', 'workingOff'] as const;
+      for (const c of cases) {
+        b = new FakeBrowser();
+        store = new Store(mapKV());
+        now = T0;
+        timers = [];
+        b.add({ id: 1, url: 'https://work.com/doc', title: 'Work', active: true, lastAccessed: T0 });
+        b.add({ id: 2, url: 'https://old.com/page', title: 'Old page', lastAccessed: T0 - 2 * DAY });
+        b.add({ id: 3, url: 'https://fresh.com/', title: 'Fresh', lastAccessed: T0 - HOUR });
+        const distracting = c === 'notDistracting' || c === 'workingOff';
+        if (distracting) {
+          await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+          b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', lastAccessed: T0 - 60_000 });
+        }
+        make();
+        await startShown();
+        const target = (await rt()).visit!.targetTabId;
+        expect(target, c).toBe(distracting ? 4 : 2);
+        await leaveBrowser();
+        if (c === 'audible') b.tabs.get(2)!.audible = true;
+        if (c === 'neverTake') await store.saveSettings({ ...DEFAULT_SETTINGS, neverTake: ['old.com'] });
+        if (c === 'notDistracting') await store.saveSettings({ ...DEFAULT_SETTINGS, distracting: ['reddit.com'] });
+        // Working mode off, without the onWorkingOff event (say it was lost): the stored state alone must stop the take.
+        if (c === 'workingOff') await v.updateRuntime((r) => ({ ...r, working: false }));
+        now += GRACE_MS;
+        await v.onDeadline();
+        expect(b.removed, c).toEqual([]);
+        expect(await store.taken(), c).toEqual([]);
+      }
+    });
+
+    it('a rule broken during the final re-read itself (sound starts): nothing removed', async () => {
+      await startShown();
+      await leaveBrowser();
+      now += GRACE_MS;
+      let n = 0;
+      b.onGetTab = (tabId) => { if (tabId === 2 && ++n === 3) b.tabs.get(2)!.audible = true; }; // the last getTab before removeTab
+      await v.onDeadline();
+      expect(n).toBe(3);
+      expect(b.removed).toEqual([]);
+      expect(b.removeUrls).toEqual([]);
     });
 
     it('the only tab left in its window is not taken at the deadline', async () => {

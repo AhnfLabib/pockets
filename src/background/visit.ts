@@ -10,7 +10,8 @@
 //   - A stage that finds its card no longer on screen when the take is due reports `hidden` instead: abandoned (or paused,
 //     when the stage is no longer in front).
 //   - At take, the target is re-read: gone, a different URL, another window, pinned, typed into, or the only tab in its
-//     window means close nothing.
+//     window means close nothing. Before an away take, the target must also still pass pickTarget's per-tab rules
+//     (stillEligible: never-take list, sound, spared, still stale or still distracting in working mode).
 //   - Only rt.visit.targetTabId is ever passed to removeTab, with targetUrl; the adapter closes only if the URL still matches.
 //   - One visit at a time; only tabs in the focused window are candidates.
 //   - A running (not paused) visit found on wake, or one silent for 60 s, is cancelled and unmarked; nothing is closed.
@@ -26,7 +27,7 @@
 //     second notification offering Undo. Otherwise the visit ends quietly.
 // Every public method runs read-decide-write inside one promise queue, so events cannot interleave.
 import type { ActiveVisit, RuntimeState, TabInfo, ToContent, VisitEvent, VisitPause, VisitPlan } from '../shared/types';
-import { pickTarget } from '../rules/target';
+import { pickTarget, stillEligible } from '../rules/target';
 import { canVisit } from '../rules/pacing';
 import { spareKept, type Store } from './store';
 
@@ -330,7 +331,8 @@ export class Visits {
     const state = await this.frontState(v);
     if (state === 'gone') { await this.abandon(rt, v); return; }
     if (state === 'front') { await this.resume(rt, v); return; }
-    if (state === 'away' && (await this.takeAllowed(v, 'away')) && (await this.targetStillValid(rt, v))) {
+    if (state === 'away' && (await this.takeAllowed(v, 'away')) && (await this.targetStillValid(rt, v))
+        && (await this.awayEligible(v))) {
       await this.finishTake(rt, v, 'away');
       return;
     }
@@ -350,6 +352,13 @@ export class Visits {
     if (!(this.now() - p.notifiedAt >= this.graceMs)) return false;
     if (p.bootId !== (await this.browser.bootId())) return false;
     return (await this.browser.browserFocused()) === false;
+  }
+
+  /** The away path waits five minutes or more after the pick: the target must still pass pickTarget's per-tab rules. */
+  private async awayEligible(v: ActiveVisit): Promise<boolean> {
+    const t = await this.browser.getTab(v.targetTabId);
+    if (!t) return false;
+    return stillEligible(t, v.reason, await this.store.settings(), await this.store.runtime(), this.now());
   }
 
   private async doDeadline(): Promise<void> {
@@ -523,11 +532,15 @@ export class Visits {
     // The away path's conditions are checked once more here (the browser may have been focused meanwhile), then the
     // target must not be the only tab in its window.
     const allowed = path === 'card' || (await this.takeAllowed(v, 'away'));
-    const typed = (await this.store.runtime()).typedIn.includes(v.targetTabId);
+    const nowRt = await this.store.runtime();
+    const typed = nowRt.typedIn.includes(v.targetTabId);
+    const settings = path === 'away' ? await this.store.settings() : null;
     const others = allowed && !typed && windowId !== undefined ? (await this.browser.tabCountInWindow(windowId)) > 1 : false;
     const last = others ? await this.browser.getTab(v.targetTabId) : null;
+    // Away path: pickTarget's per-tab rules once more, on this same re-read (synchronous: nothing awaited before removeTab).
+    const eligible = !settings || (!!last && stillEligible(last, v.reason, settings, nowRt, this.now()));
     let closed = false;
-    if (others && tabMatches(last, v, windowId)) {
+    if (others && eligible && tabMatches(last, v, windowId)) {
       try {
         closed = await this.browser.removeTab(v.targetTabId, v.targetUrl);
       } catch {

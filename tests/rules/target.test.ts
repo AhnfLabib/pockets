@@ -144,3 +144,28 @@ describe('pickTarget: never closes a window', () => {
     expect(pickTarget([t, tab({ pinned: true })], 1, s, rt(), now)?.tab).toBe(t);
   });
 });
+
+describe('stillEligible (re-checked before an away take)', () => {
+  it('stale: same rules as the pick', async () => {
+    const { stillEligible } = await import('../../src/rules/target');
+    const t = tab();
+    expect(stillEligible(t, 'stale', s, rt(), now)).toBe(true);
+    expect(stillEligible({ ...t, audible: true }, 'stale', s, rt(), now)).toBe(false);
+    expect(stillEligible({ ...t, pinned: true }, 'stale', s, rt(), now)).toBe(false);
+    expect(stillEligible({ ...t, active: true }, 'stale', s, rt(), now)).toBe(false);
+    expect(stillEligible({ ...t, lastAccessed: now - H }, 'stale', s, rt(), now)).toBe(false);
+    expect(stillEligible(t, 'stale', s, rt({ typedIn: [t.id] }), now)).toBe(false);
+    expect(stillEligible(t, 'stale', s, rt({ spared: { [t.id]: { until: now + H } } }), now)).toBe(false);
+    expect(stillEligible(t, 'stale', { ...s, neverTake: ['example.com'] }, rt(), now)).toBe(false);
+  });
+  it('distracting: only while working, on the list, and not spared this session', async () => {
+    const { stillEligible } = await import('../../src/rules/target');
+    const t = tab({ url: 'https://www.youtube.com/watch?v=1', lastAccessed: now, active: true });
+    const working = rt({ working: true, workingSince: now - H });
+    expect(stillEligible(t, 'distracting', s, working, now)).toBe(true);
+    expect(stillEligible(t, 'distracting', s, rt(), now)).toBe(false);
+    expect(stillEligible(t, 'distracting', { ...s, distracting: ['reddit.com'] }, working, now)).toBe(false);
+    expect(stillEligible(t, 'distracting', s, { ...working, spared: { [t.id]: { workingSince: now - H } } }, now)).toBe(false);
+    expect(stillEligible({ ...t, pinned: true }, 'distracting', s, working, now)).toBe(false);
+  });
+});

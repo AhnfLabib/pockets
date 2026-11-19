@@ -120,6 +120,9 @@ Uninstalling Pockets removes all of it.
   takes a tab while you are away (the visit ends quietly after five minutes). But if notifications are silenced by
   the operating system or by Focus / Do Not Disturb, the browser still reports them as shown, so a tab can be taken
   without you seeing the warning. Undo in the popup still brings it back.
+- **Windows Pockets cannot see count as "away".** An incognito window (unless you allowed Pockets in incognito) or a
+  window of another Chrome profile is invisible to the extension. Working in one during a visit looks like having left
+  the browser: the warning notification fires, and the tab is taken five minutes later unless you come back.
 
 - **Sleeping tabs cannot show the face or the countdown on the tab bar.** Chrome's Memory Saver puts background
   tabs to sleep, and a sleeping tab runs no page code. Pockets still warns with the card on the page you are
