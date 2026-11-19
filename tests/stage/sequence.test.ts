@@ -97,6 +97,23 @@ describe('runVisit', () => {
     expect(s.travels.length).toBeGreaterThan(0);
   });
 
+  it('resume: no climb; Pockets starts under the tab, the card is confirmed again and the full countdown runs', async () => {
+    const s = setup();
+    const starts: Pt[] = [];
+    const create = s.deps.createRig;
+    s.deps.createRig = (start, heading) => { starts.push(start); return create(start, heading); };
+    const t0 = Date.now();
+    const at: Record<string, number> = {};
+    const p = runVisit(plan({ resume: true }), (e) => { s.emit(e); at[e.type === 'tick' ? `tick ${e.remaining}` : e.type] ??= Date.now() - t0; }, s.deps);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await p;
+    s.stop();
+    expect(types(s.events)).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'take', 'done']);
+    expect(starts).toEqual([{ x: estimateTabX(2, 5, 1000), y: 24 }]);
+    expect(at['card-shown']).toBeLessThan(200); // no peek, look or climb before the card
+    expect(s.card.log[0]).toBe('show');
+  });
+
   it('spaces the ticks one second apart and takes one second after the last tick', async () => {
     const s = setup();
     const at: Record<string, number> = {};

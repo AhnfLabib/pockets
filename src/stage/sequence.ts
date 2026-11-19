@@ -100,6 +100,8 @@ export function cardPosition(tx: number, width: number, reduced: boolean): { lef
  * the visit ends there, with no done; the same happens if the card has not come on screen within ten seconds of
  * the countdown phase starting. From play until card-shown (or hidden), alive is emitted every ten seconds so the
  * background's service worker is not stopped mid-climb; it stops on card-shown, on abort and when the visit ends.
+ * With plan.resume (the background replays a paused visit), there is no climb: the countdown starts again from the full
+ * length and card-shown is reported again once the card is on screen.
  */
 export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: SequenceDeps): Promise<void> {
   const { signal } = deps;
@@ -192,7 +194,8 @@ async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: S
     return;
   }
 
-  const rig = deps.createRig({ x: BORDER_X, y: H + 36 }, -Math.PI / 2);
+  // A resumed visit (the user came back after a pause) skips the climb: Pockets is already under the tab, reaching up.
+  const rig = deps.createRig(plan.resume ? { x: tx, y: 24 } : { x: BORDER_X, y: H + 36 }, -Math.PI / 2);
   deps.setVisible?.(true);
   // One travel() per leg, as in the mock. The rig's steering timeout scales with the path, so a long leg
   // on a big screen is not cut short.
@@ -203,18 +206,20 @@ async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: S
   };
   const jx = (): number => BORDER_X + (rand() * 2 - 1) * CLIMB_JITTER;
 
-  // Peek in at the bottom and look around.
-  if (!(await go([{ x: BORDER_X, y: H - 6 }], PEEK_SPEED, false))) return;
-  rig.setLook(true);
-  if (!(await wait(LOOK_MS))) return;
-  rig.setLook(false);
+  if (!plan.resume) {
+    // Peek in at the bottom and look around.
+    if (!(await go([{ x: BORDER_X, y: H - 6 }], PEEK_SPEED, false))) return;
+    rig.setLook(true);
+    if (!(await wait(LOOK_MS))) return;
+    rig.setLook(false);
 
-  // Climb the left border, then cross the top to under the target tab and turn up to it.
-  if (!(await go([{ x: jx(), y: H * 0.72 }, { x: jx(), y: H * 0.48 }, { x: jx(), y: H * 0.27 }, { x: 32, y: 64 }], CLIMB_SPEED))) return;
-  const cross = [
-    { x: 62, y: 54 }, { x: (62 + tx) / 2, y: 70 + (rand() - 0.5) * 12 }, { x: tx - 32, y: 66 }, { x: tx - 5, y: 50 }, { x: tx, y: 24 },
-  ];
-  if (!(await go(cross, CLIMB_SPEED))) return;
+    // Climb the left border, then cross the top to under the target tab and turn up to it.
+    if (!(await go([{ x: jx(), y: H * 0.72 }, { x: jx(), y: H * 0.48 }, { x: jx(), y: H * 0.27 }, { x: 32, y: 64 }], CLIMB_SPEED))) return;
+    const cross = [
+      { x: 62, y: 54 }, { x: (62 + tx) / 2, y: 70 + (rand() - 0.5) * 12 }, { x: tx - 32, y: 66 }, { x: tx - 5, y: 50 }, { x: tx, y: 24 },
+    ];
+    if (!(await go(cross, CLIMB_SPEED))) return;
+  }
   rig.setReach(true);
 
   const outcome = await countdown(rig);

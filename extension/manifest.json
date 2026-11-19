@@ -9,7 +9,8 @@
     "alarms",
     "idle",
     "sessions",
-    "scripting"
+    "scripting",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"

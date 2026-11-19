@@ -1,7 +1,9 @@
 // Background service worker: wires chrome events to the visit state machine.
 // Listeners are registered synchronously at top level, and onWake is queued before anything else,
-// so an event that woke the worker is always handled after a leftover visit has been cancelled.
-import { Visits } from './visit';
+// so an event that woke the worker is always handled after a leftover visit has been cancelled (or, when paused,
+// picked up again). Notification and alarm events find their visit or taken entry in storage, so they work after a
+// worker restart.
+import { DEADLINE_ALARM, Visits, type Browser } from './visit';
 import { Store, clearTyped, forgetTab, setWorking } from './store';
 import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
@@ -15,16 +17,12 @@ declare const __POCKETS_TEST__: boolean;
 const ALARM = 'pockets-tick';
 
 const store = new Store(chromeKV);
-const visits = new Visits(chromeBrowser, store, () => Date.now(), () => crypto.randomUUID());
+/** A copy, so a test build can stand in for focus (see the test-only block below). */
+const browser: Browser = { ...chromeBrowser };
+const visits = new Visits(browser, store, () => Date.now(), () => crypto.randomUUID());
 
-/** Working mode shows on the toolbar icon as a small red badge. */
-function paintBadge(working: boolean): void {
-  void chrome.action.setBadgeText({ text: working ? ' ' : '' }).catch(() => {});
-  if (working) void chrome.action.setBadgeBackgroundColor({ color: '#d9483b' }).catch(() => {});
-}
-void store.runtime().then((rt) => paintBadge(rt.working)).catch(() => {});
-
-// Worker start: a stored visit belongs to a dead worker. Cancel and unmark it; close nothing.
+// Worker start: a running visit belongs to a dead worker. Cancel and unmark it; close nothing. A paused visit from this
+// browser run is picked up again. Every queued step also repaints the badge ("!" while paused, the working dot, or none).
 void visits.onWake();
 
 chrome.runtime.onStartup.addListener(() => { void visits.onWake(); });
@@ -39,7 +37,14 @@ chrome.runtime.onInstalled.addListener((details) => {
 void chrome.alarms.get(ALARM).then((a) => {
   if (!a) void chrome.alarms.create(ALARM, { periodInMinutes: 1 });
 }).catch(() => {});
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === ALARM) void visits.tick(); });
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === ALARM) void visits.tick();
+  else if (a.name === DEADLINE_ALARM) void visits.onDeadline();
+});
+
+// The away warning (click: back to the stage) and the "stole" notification (button 0: Undo).
+chrome.notifications?.onClicked.addListener((id) => { void visits.onNotificationClicked(id); });
+chrome.notifications?.onButtonClicked.addListener((id, index) => { void visits.onNotificationButton(id, index); });
 
 function tabGone(tabId: number): void {
   void visits.onTabGone(tabId);
@@ -95,7 +100,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // The queue contains errors, so confirm the save landed before reporting success or painting.
           if ((await store.runtime()).working !== on) throw new Error('save failed');
           if (!on) await visits.onWorkingOff();
-          paintBadge(on);
+          await visits.refreshBadge();
         })().then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
         return true;
       }
@@ -127,8 +132,25 @@ if (__POCKETS_TEST__) {
     tick?: boolean;
     /** Run the install-time injection into open tabs now (it otherwise runs only on install or update). */
     inject?: boolean;
+    /** Shorten the pause grace period (ms). */
+    graceMs?: number;
+    /** Stand in for "no browser window is focused" (headless Chromium cannot lose focus). */
+    away?: boolean;
+    /** Run the focus-change handler now, as chrome.windows.onFocusChanged would. */
+    focusChanged?: boolean;
   };
   const KEY = 'pocketsTestSettings';
+  const FOCUS_KEY = 'pocketsTestAway';
+  const GRACE_KEY = 'pocketsTestGrace';
+  const simulatedAway = async (): Promise<boolean> => (await chrome.storage.local.get(FOCUS_KEY))[FOCUS_KEY] === true;
+  const realFocused = chromeBrowser.browserFocused;
+  const realTabs = chromeBrowser.tabsInFocusedWindow;
+  browser.browserFocused = async () => ((await simulatedAway()) ? false : realFocused());
+  browser.tabsInFocusedWindow = async () => ((await simulatedAway()) ? null : realTabs());
+  void chrome.storage.local.get(GRACE_KEY).then((o) => { if (typeof o[GRACE_KEY] === 'number') visits.graceMs = o[GRACE_KEY]; });
+  // The notification handlers, for a test to press a notification or its button (headless shows no notifications).
+  (globalThis as unknown as Record<string, unknown>).__pocketsNotificationClicked = (id: string) => visits.onNotificationClicked(id);
+  (globalThis as unknown as Record<string, unknown>).__pocketsNotificationButton = (id: string, i: number) => visits.onNotificationButton(id, i);
   const readOverrides = async (): Promise<Partial<Settings>> => {
     const o = (await chrome.storage.local.get(KEY))[KEY];
     return o && typeof o === 'object' ? (o as Partial<Settings>) : {};
@@ -147,6 +169,12 @@ if (__POCKETS_TEST__) {
         ...(Array.isArray(r.staleTakes) ? { staleTakes: r.staleTakes } : {}),
       }));
     }
+    if (typeof p.graceMs === 'number') {
+      visits.graceMs = p.graceMs;
+      await chrome.storage.local.set({ [GRACE_KEY]: p.graceMs });
+    }
+    if (typeof p.away === 'boolean') await chrome.storage.local.set({ [FOCUS_KEY]: p.away });
+    if (p.focusChanged) await visits.onFocusChanged();
     if (p.tick) await visits.tick();
     if (p.inject) return { ok: true, injected: await injectIntoOpenTabs(chromeInjectApi) };
     return { ok: true };

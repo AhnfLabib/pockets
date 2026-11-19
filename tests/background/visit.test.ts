@@ -1,6 +1,6 @@
 import { canUndo } from '../../src/background/sender';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Visits, type Browser } from '../../src/background/visit';
+import { Visits, GRACE_MS, AWAY_CONFIRM_MS, DEADLINE_ALARM, AWAY_MESSAGE, TAKEN_MESSAGE, type Browser } from '../../src/background/visit';
 import { Store, type KV } from '../../src/background/store';
 import { chromeBrowser, pickNewSession, sessionIsTab, closedIdsFor, canCloseTab } from '../../src/background/chrome-browser';
 import { DEFAULT_SETTINGS } from '../../src/shared/defaults';
@@ -34,6 +34,16 @@ class FakeBrowser implements Browser {
   restoredUrls: string[] = [];
   onGetTab: ((id: number) => void) | null = null;
   opened: string[] = [];
+  /** Whether any browser window is focused; null follows `focused` (the stage's normal window). */
+  anyFocused: boolean | null = null;
+  minimized = new Set<number>();
+  notifyFails = false;
+  created: { id: string; title: string; message: string; buttons?: string[] }[] = [];
+  cleared: string[] = [];
+  focusedTabs: number[] = [];
+  alarms = new Map<string, number>();
+  badges: string[] = [];
+  boot = 'boot-1';
 
   add(t: Partial<TabInfo> & { id: number; url: string }): TabInfo {
     const tab: TabInfo = { windowId: 1, index: this.tabs.size, title: 'Tab ' + t.id, active: false, pinned: false, audible: false,
@@ -67,6 +77,21 @@ class FakeBrowser implements Browser {
   async lastClosedSessionId(url?: string) { this.sessionUrls.push(url); return this.sessionId; }
   async restore(id: string, url: string) { this.restored.push(id); this.restoredUrls.push(url); return this.restoreOk; }
   async openUrl(url: string) { this.opened.push(url); }
+  async browserFocused() { return this.anyFocused ?? this.focused; }
+  async windowMinimized(id: number) { return this.minimized.has(id); }
+  async tabCountInWindow(id: number) { return [...this.tabs.values()].filter((t) => t.windowId === id).length; }
+  async createNotification(id: string, n: { title: string; message: string; buttons?: string[] }) {
+    if (this.notifyFails) return false;
+    this.created.push({ id, ...n });
+    return true;
+  }
+  onClear: ((id: string) => void) | null = null;
+  async clearNotification(id: string) { this.cleared.push(id); this.onClear?.(id); }
+  async focusTab(tabId: number) { this.focusedTabs.push(tabId); }
+  async setAlarm(name: string, when: number) { this.alarms.set(name, when); }
+  async clearAlarm(name: string) { this.alarms.delete(name); }
+  async setBadge(text: string) { this.badges.push(text); }
+  async bootId() { return this.boot; }
 
   to(tabId: number, type: ToContent['type']): ToContent[] {
     return this.sent.filter((s) => s.tabId === tabId && s.msg.type === type).map((s) => s.msg);
@@ -102,6 +127,13 @@ beforeEach(() => {
 
 const rt = () => store.runtime();
 const visitId = async () => (await rt()).visit!.visitId;
+
+/** Run the timers scheduled so far (deadline and away-confirm), then wait for the queue. */
+async function runTimers() {
+  for (const t of timers.splice(0)) t.fn();
+  await v.idle();
+  await v.idle();
+}
 
 /** Start a visit and show the card; returns the visit id. */
 async function startShown(stage = 1): Promise<string> {
@@ -689,84 +721,87 @@ describe('Fix round 1', () => {
     expect(b.removed).toEqual([2]);
   });
 
-  describe('switching away from the stage mid-countdown', () => {
-    async function expectCancelledWithoutSpare(id: string) {
+  describe('switching away from the stage mid-countdown pauses (release B: no longer cancels)', () => {
+    /** Paused: nothing removed, the stage told to cancel, the target unmarked, card-shown reset, badge "!". */
+    async function expectPaused(id: string) {
       expect(b.removed).toEqual([]);
       const r = await rt();
-      expect(r.visit).toBeNull();
+      expect(r.visit?.visitId).toBe(id);
+      expect(r.visit?.pause).toMatchObject({ at: now, bootId: 'boot-1', windowId: 1 });
+      expect(r.visit?.cardShown).toBe(false);
       expect(r.spared).toEqual({});
-      expect(r.lastStaleVisitEnd).toBe(now); // a stale visit still starts the gap
       expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
       expect(b.to(2, 'pockets/unmark')).toHaveLength(1);
+      expect(b.badges.at(-1)).toBe('!');
       await v.onEvent(1, id, { type: 'take' });
       expect(b.removed).toEqual([]);
     }
 
-    it('stage deactivated after card-shown: nothing removed', async () => {
+    it('stage deactivated after card-shown: paused, nothing removed, no notification', async () => {
       const id = await startShown();
       b.tabs.get(1)!.active = false;
       b.tabs.get(3)!.active = true;
       await v.onTabActivated(3);
-      await expectCancelledWithoutSpare(id);
+      await expectPaused(id);
+      await runTimers();
+      expect(b.created).toEqual([]);
     });
 
-    it('window blur after card-shown: nothing removed', async () => {
+    it('window blur after card-shown: paused, nothing removed', async () => {
       const id = await startShown();
       b.focused = false;
       await v.onFocusChanged();
-      await expectCancelledWithoutSpare(id);
+      await expectPaused(id);
     });
 
-    it('stage not active when take arrives (no activation event delivered): nothing removed', async () => {
+    it('stage not active when take arrives (no activation event delivered): paused, nothing removed', async () => {
       const id = await startShown();
       b.tabs.get(1)!.active = false;
       b.tabs.get(3)!.active = true;
       await v.onEvent(1, id, { type: 'take' });
-      await expectCancelledWithoutSpare(id);
+      await expectPaused(id);
     });
 
-    it('window not focused when take arrives: nothing removed', async () => {
+    it('window not focused when take arrives: paused, nothing removed', async () => {
       const id = await startShown();
       b.focused = false;
       await v.onEvent(1, id, { type: 'take' });
-      await expectCancelledWithoutSpare(id);
+      await expectPaused(id);
     });
 
-    it('stage already hidden when card-shown arrives: the visit is abandoned', async () => {
+    it('stage already hidden when card-shown arrives: paused; coming back replays the visit', async () => {
       await v.tick();
       const id = await visitId();
       b.tabs.get(1)!.active = false;
       b.tabs.get(3)!.active = true;
       await v.onEvent(1, id, { type: 'card-shown' });
-      expect((await rt()).visit).toBeNull();
-      await v.onEvent(1, id, { type: 'take' });
-      expect(b.removed).toEqual([]);
-      // after the gap the next tick can try again
+      await expectPaused(id);
       b.tabs.get(3)!.active = false;
       b.tabs.get(1)!.active = true;
-      now += 5 * 60_000;
-      await v.tick();
+      await v.onTabActivated(1);
       expect(b.to(1, 'pockets/play')).toHaveLength(2);
+      expect((await rt()).visit!.pause).toBeUndefined();
     });
 
-    it('a stale visit cancelled by switching away starts the gap: no visit 1 min later, one 5 min later', async () => {
+    it('a stale visit paused by a tab switch and never resumed ends quietly after 5 min and starts the gap', async () => {
       await startShown();
-      const cancelledAt = now;
+      const pausedAt = now;
       b.tabs.get(1)!.active = false;
       b.tabs.get(3)!.active = true;
       await v.onTabActivated(3);
+      now = pausedAt + GRACE_MS;
+      await v.onDeadline();
       expect(b.removed).toEqual([]);
-      expect((await rt()).spared).toEqual({});
+      expect((await rt()).visit).toBeNull();
+      expect((await rt()).lastStaleVisitEnd).toBe(now);
       b.tabs.get(3)!.active = false;
       b.tabs.get(1)!.active = true;
-      now = cancelledAt + 60_000;
+      now += 60_000;
       await v.tick();
       expect(b.to(1, 'pockets/play')).toHaveLength(1);
-      expect((await rt()).visit).toBeNull();
-      now = cancelledAt + 5 * 60_000;
+      now = pausedAt + GRACE_MS + 5 * 60_000;
       await v.tick();
       expect(b.to(1, 'pockets/play')).toHaveLength(2);
-      expect((await rt()).visit).not.toBeNull();
       expect(b.removed).toEqual([]);
     });
 
@@ -1046,4 +1081,590 @@ describe('Visits: the card never came on screen', () => {
     expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
     expect(b.to(2, 'pockets/unmark')).toHaveLength(1);
   });
+});
+
+describe('Visits: pause, resume and the away take (release B)', () => {
+  const switchAway = async () => {
+    b.tabs.get(1)!.active = false;
+    b.tabs.get(3)!.active = true;
+    await v.onTabActivated(3);
+  };
+  const switchBack = async () => {
+    b.tabs.get(3)!.active = false;
+    b.tabs.get(1)!.active = true;
+    await v.onTabActivated(1);
+  };
+  /** The user leaves the browser (another app in front); the absence is confirmed and the warning goes out. */
+  const leaveBrowser = async () => {
+    b.focused = false;
+    await v.onFocusChanged();
+    now += AWAY_CONFIRM_MS;
+    await runTimers();
+  };
+  const awayId = (id: string) => 'pockets-away:' + id;
+
+  describe('A: a tab switch inside the browser', () => {
+    it('pauses; coming back restarts the full countdown under a new visit id, and a take needs a new card-shown', async () => {
+      await store.saveSettings({ ...DEFAULT_SETTINGS, countdownSeconds: 7 });
+      const id = await startShown();
+      await v.onEvent(1, id, { type: 'tick', remaining: 7 });
+      await v.onEvent(1, id, { type: 'tick', remaining: 6 });
+      await switchAway();
+      expect((await rt()).visit!.pause).toBeDefined();
+      // Events from the hidden stage are ignored while paused.
+      await v.onEvent(1, id, { type: 'tick', remaining: 5 });
+      await v.onEvent(1, id, { type: 'take' });
+      expect(b.removed).toEqual([]);
+      now += 30_000;
+      await switchBack();
+      const plans = b.plans(1);
+      expect(plans).toHaveLength(2);
+      const resumed = plans[1];
+      expect(resumed.visitId).not.toBe(id);
+      expect(resumed).toMatchObject({ targetTabId: 2, title: 'Old page', countdownSeconds: 7, resume: true, targetIsStage: false });
+      const r = await rt();
+      expect(r.visit).toMatchObject({ visitId: resumed.visitId, cardShown: false, targetTabId: 2, stageTabId: 1 });
+      expect(r.visit!.pause).toBeUndefined();
+      expect(b.alarms.has(DEADLINE_ALARM)).toBe(false);
+      // A late card-shown or take from the old play does not count.
+      await v.onEvent(1, id, { type: 'card-shown' });
+      expect((await rt()).visit!.cardShown).toBe(false);
+      await v.onEvent(1, id, { type: 'take' });
+      expect(b.removed).toEqual([]);
+      // The new play's take without its own card-shown closes nothing.
+      await v.onEvent(1, resumed.visitId, { type: 'take' });
+      expect(b.removed).toEqual([]);
+      expect((await rt()).visit).toBeNull();
+    });
+
+    it('after the resumed card is confirmed, the take closes the target', async () => {
+      const id = await startShown();
+      await switchAway();
+      await switchBack();
+      const nid = await visitId();
+      expect(nid).not.toBe(id);
+      await v.onEvent(1, nid, { type: 'card-shown' });
+      await v.onEvent(1, nid, { type: 'take' });
+      expect(b.removed).toEqual([2]);
+      expect((await store.taken())[0]).toMatchObject({ url: 'https://old.com/page', noticeTabId: 1 });
+      expect(b.created).toEqual([]);
+    });
+
+    it('not back within 5 minutes: the visit ends quietly, nothing removed, no notification', async () => {
+      const id = await startShown();
+      const pausedAt = now;
+      await switchAway();
+      expect(b.alarms.get(DEADLINE_ALARM)).toBe(pausedAt + GRACE_MS);
+      now = pausedAt + GRACE_MS - 1;
+      await v.onDeadline();
+      await v.tick();
+      expect((await rt()).visit?.visitId).toBe(id);
+      now = pausedAt + GRACE_MS;
+      await runTimers(); // the in-worker deadline timer
+      expect((await rt()).visit).toBeNull();
+      expect(b.removed).toEqual([]);
+      expect(b.created).toEqual([]);
+      expect(b.alarms.has(DEADLINE_ALARM)).toBe(false);
+    });
+
+    it('the minute tick ends a paused visit whose deadline passed, if the alarm never came', async () => {
+      await startShown();
+      await switchAway();
+      now += GRACE_MS + 30_000;
+      await v.tick();
+      expect((await rt()).visit).toBeNull();
+      expect(b.removed).toEqual([]);
+    });
+
+    it('the 60 s silence rule does not end a paused visit', async () => {
+      const id = await startShown();
+      await switchAway();
+      now += 3 * 60_000;
+      await v.tick();
+      expect((await rt()).visit?.visitId).toBe(id);
+      expect(b.to(1, 'pockets/cancel')).toHaveLength(1); // only the pause's
+    });
+  });
+
+  describe('B: leaving the browser', () => {
+    it('one warning notification for the visit, with the target title; repeated focus events add none', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      expect(b.created).toEqual([{ id: awayId(id), title: 'Pockets has his eye on “Old page”', message: AWAY_MESSAGE }]);
+      const p = (await rt()).visit!.pause!;
+      expect(p).toMatchObject({ notifyTried: true, notifiedAt: now, notificationId: awayId(id) });
+      expect(b.alarms.get(DEADLINE_ALARM)).toBe(now + GRACE_MS);
+      await v.onFocusChanged();
+      await v.tick();
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      expect(b.created).toHaveLength(1);
+      expect(b.removed).toEqual([]);
+    });
+
+    it('a minimised stage window counts as away', async () => {
+      const id = await startShown();
+      b.minimized.add(1);
+      b.anyFocused = true;
+      b.focused = false; // the minimised window is no longer the focused one
+      await v.onFocusChanged();
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      expect(b.created.map((c) => c.id)).toEqual([awayId(id)]);
+    });
+
+    it('a no-window-focused blip during a switch between two browser windows sends no notification', async () => {
+      await startShown();
+      b.focused = false;
+      b.anyFocused = false;
+      await v.onFocusChanged();
+      b.anyFocused = true; // another browser window took focus a moment later
+      await v.onFocusChanged();
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      expect(b.created).toEqual([]);
+      expect((await rt()).visit!.pause).toBeDefined();
+    });
+
+    it('5 minutes after the notification, still away: the target is taken without the card, recorded, and Undo is offered', async () => {
+      await store.saveRuntime({ ...(await rt()), staleTakes: [T0 - 2 * HOUR] });
+      const id = await startShown();
+      await leaveBrowser();
+      const notifiedAt = now;
+      now = notifiedAt + GRACE_MS - 1;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      now = notifiedAt + GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([2]);
+      const taken = await store.taken();
+      expect(taken).toEqual([{ title: 'Old page', url: 'https://old.com/page', favIconUrl: 'https://old.com/f.ico', takenAt: now,
+        reason: 'stale', sessionId: 'sess-1' }]);
+      const r = await rt();
+      expect(r.visit).toBeNull();
+      expect(r.staleTakes).toEqual([now]);
+      expect(r.lastStaleVisitEnd).toBe(now);
+      expect(b.cleared).toContain(awayId(id));
+      expect(b.created.at(-1)).toEqual({ id: 'pockets-taken:' + now, title: 'Pockets stole “Old page”', message: TAKEN_MESSAGE, buttons: ['Undo'] });
+      expect(b.to(1, 'pockets/notice')).toEqual([]);
+      expect(b.badges.at(-1)).toBe('');
+    });
+
+    it('a distracting away take records lastDistractingTake', async () => {
+      await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+      b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', lastAccessed: T0 - 60_000 });
+      await startShown();
+      await leaveBrowser();
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([4]);
+      expect((await rt()).lastDistractingTake).toBe(now);
+      expect(b.badges.at(-1)).toBe(' '); // the working dot is back
+    });
+
+    it('Undo on the "stole" notification restores the tab in place', async () => {
+      await startShown();
+      await leaveBrowser();
+      now += GRACE_MS;
+      await v.onDeadline();
+      const takenAt = (await store.taken())[0].takenAt;
+      await v.onNotificationButton('pockets-taken:' + takenAt, 0);
+      expect(b.restored).toEqual(['sess-1']);
+      expect(b.restoredUrls).toEqual(['https://old.com/page']);
+      expect(await store.taken()).toEqual([]);
+      expect(b.cleared).toContain('pockets-taken:' + takenAt);
+    });
+
+    it('Undo falls back to opening the URL when the session cannot be restored', async () => {
+      b.restoreOk = false;
+      await startShown();
+      await leaveBrowser();
+      now += GRACE_MS;
+      await v.onDeadline();
+      const takenAt = (await store.taken())[0].takenAt;
+      await v.onNotificationButton('pockets-taken:' + takenAt, 0);
+      expect(b.opened).toEqual(['https://old.com/page']);
+    });
+
+    it('at the deadline a browser window is focused but the stage is not in front: nothing removed, the visit ends', async () => {
+      await startShown();
+      await leaveBrowser();
+      b.focused = true;
+      b.tabs.get(1)!.active = false;
+      b.tabs.get(3)!.active = true;
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      expect((await rt()).visit).toBeNull();
+    });
+
+    it('the browser is focused again during the final checks: nothing removed', async () => {
+      await startShown();
+      await leaveBrowser();
+      now += GRACE_MS;
+      let n = 0;
+      b.onGetTab = (tabId) => { if (tabId === 2 && ++n === 1) b.anyFocused = true; };
+      await v.onDeadline();
+      expect(n).toBeGreaterThanOrEqual(1);
+      expect(b.removed).toEqual([]);
+      expect(b.removeUrls).toEqual([]);
+      expect(await store.taken()).toEqual([]);
+    });
+
+    it('the browser is focused while the take is being recorded (after the entry check): nothing removed, nothing recorded', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      now += GRACE_MS;
+      b.onClear = (cid) => { if (cid === awayId(id)) b.anyFocused = true; }; // end() withdraws the warning mid-take
+      await v.onDeadline();
+      expect(b.cleared).toContain(awayId(id));
+      expect(b.removed).toEqual([]);
+      expect(b.removeUrls).toEqual([]);
+      expect(await store.taken()).toEqual([]);
+      expect(b.created.filter((c) => c.id.startsWith('pockets-taken:'))).toEqual([]);
+    });
+
+    it('back at the stage before the deadline: resumed, the warning withdrawn, and the alarm decides nothing', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      now += 2 * 60_000;
+      b.focused = true;
+      await v.onFocusChanged();
+      const r = await rt();
+      expect(r.visit!.visitId).not.toBe(id);
+      expect(r.visit!.pause).toBeUndefined();
+      expect(b.cleared).toContain(awayId(id));
+      expect(b.alarms.has(DEADLINE_ALARM)).toBe(false);
+      expect(b.badges.at(-1)).toBe('');
+      expect(b.plans(1).at(-1)).toMatchObject({ resume: true, countdownSeconds: 5 });
+      now += 10 * 60_000;
+      await v.onDeadline();
+      await runTimers();
+      expect(b.removed).toEqual([]);
+    });
+
+    it('leaving again after a resume warns again with a fresh 5 minutes (each away period has its own warning)', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      b.focused = true;
+      await v.onFocusChanged();
+      const nid = await visitId();
+      await v.onEvent(1, nid, { type: 'card-shown' });
+      await leaveBrowser();
+      expect(b.created.map((c) => c.id)).toEqual([awayId(id), awayId(nid)]);
+      const second = now;
+      now = second + GRACE_MS - 1;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      now = second + GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([2]);
+    });
+
+    it('back in the browser on another tab, then away again: no second warning; the first deadline still decides', async () => {
+      await startShown();
+      await leaveBrowser();
+      const notifiedAt = now;
+      b.focused = true;
+      b.tabs.get(1)!.active = false;
+      b.tabs.get(3)!.active = true;
+      await v.onTabActivated(3);
+      b.focused = false;
+      now += 60_000;
+      await v.onFocusChanged();
+      now += AWAY_CONFIRM_MS;
+      await runTimers();
+      expect(b.created).toHaveLength(1);
+      now = notifiedAt + GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([2]);
+    });
+
+    it('the notification cannot be created: never an away take; the visit ends quietly 5 min after leaving', async () => {
+      b.notifyFails = true;
+      const id = await startShown();
+      const leftAt = now;
+      await leaveBrowser();
+      const p = (await rt()).visit!.pause!;
+      expect(p.notifyTried).toBe(true);
+      expect(p.notifiedAt).toBeUndefined();
+      expect(p.notificationId).toBeUndefined();
+      now = leftAt + GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      expect((await rt()).visit).toBeNull();
+      expect(id).toBeTruthy();
+    });
+
+    it('clicking the warning focuses the stage, and that pause can no longer take while away', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      await v.onNotificationClicked(awayId(id));
+      expect(b.focusedTabs).toEqual([1]);
+      expect((await rt()).visit!.pause!.clickedAt).toBe(now);
+      now += GRACE_MS; // the focus never arrived (say the OS refused it)
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      expect((await rt()).visit).toBeNull();
+    });
+
+    it('a click on a warning for another visit does nothing to this one', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      await v.onNotificationClicked('pockets-away:someone-else');
+      expect(b.focusedTabs).toEqual([]);
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([2]);
+      expect(id).toBeTruthy();
+    });
+
+    it('target typed into, pinned, or navigated by the deadline: nothing removed', async () => {
+      for (const spoil of ['typed', 'pinned', 'url'] as const) {
+        b = new FakeBrowser();
+        store = new Store(mapKV());
+        now = T0;
+        timers = [];
+        b.add({ id: 1, url: 'https://work.com/doc', title: 'Work', active: true, lastAccessed: T0 });
+        b.add({ id: 2, url: 'https://old.com/page', title: 'Old page', lastAccessed: T0 - 2 * DAY });
+        b.add({ id: 3, url: 'https://fresh.com/', title: 'Fresh', lastAccessed: T0 - HOUR });
+        make();
+        await startShown();
+        await leaveBrowser();
+        if (spoil === 'typed') await v.updateRuntime((r) => ({ ...r, typedIn: [2] }));
+        if (spoil === 'pinned') b.tabs.get(2)!.pinned = true;
+        if (spoil === 'url') b.tabs.get(2)!.url = 'https://old.com/elsewhere'; // without an onUpdated event
+        now += GRACE_MS;
+        await v.onDeadline();
+        expect(b.removed, spoil).toEqual([]);
+        expect(await store.taken(), spoil).toEqual([]);
+        expect((await rt()).visit, spoil).toBeNull();
+      }
+    });
+
+    it('the only tab left in its window is not taken at the deadline', async () => {
+      // A distracting page in front is both stage and target; while the user is away, its window's other tabs close.
+      await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+      b.tabs.get(1)!.active = false;
+      b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', active: true, lastAccessed: T0 });
+      await v.tick();
+      const id = await visitId();
+      expect((await rt()).visit).toMatchObject({ targetTabId: 4, stageTabId: 4 });
+      await v.onEvent(4, id, { type: 'card-shown' });
+      await leaveBrowser();
+      expect(b.created.map((c) => c.id)).toEqual([awayId(id)]);
+      for (const t of [1, 2, 3]) { b.tabs.delete(t); await v.onTabGone(t); }
+      expect((await rt()).visit?.visitId).toBe(id);
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      expect(await store.taken()).toEqual([]);
+      expect((await rt()).visit).toBeNull();
+    });
+
+    it('control: the same stage-target away visit with other tabs left is taken', async () => {
+      await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+      b.tabs.get(1)!.active = false;
+      b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', active: true, lastAccessed: T0 });
+      await v.tick();
+      const id = await visitId();
+      await v.onEvent(4, id, { type: 'card-shown' });
+      await leaveBrowser();
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([4]);
+    });
+  });
+
+  describe('worker and browser restarts', () => {
+    it('a worker restart during an away pause keeps the visit, re-arms the deadline, and the deadline still decides', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      const notifiedAt = now;
+      b.alarms.clear();
+      make(); // a fresh worker: no memo, no timers
+      timers = [];
+      await v.onWake();
+      expect((await rt()).visit?.visitId).toBe(id);
+      expect(b.alarms.get(DEADLINE_ALARM)).toBe(notifiedAt + GRACE_MS);
+      expect(b.to(2, 'pockets/unmark')).toHaveLength(1); // only the pause's
+      now = notifiedAt + GRACE_MS;
+      make(); // and another restart before the alarm
+      await v.onWake();
+      expect(b.removed).toEqual([2]);
+      expect((await store.taken())[0]).toMatchObject({ title: 'Old page', url: 'https://old.com/page' });
+      expect(b.created.at(-1)!.title).toBe('Pockets stole “Old page”');
+    });
+
+    it('a worker restart during a tab-switch pause, then the user comes back: resumed', async () => {
+      const id = await startShown();
+      await switchAwayHelper();
+      make();
+      await v.onWake();
+      expect((await rt()).visit?.visitId).toBe(id);
+      b.tabs.get(3)!.active = false;
+      b.tabs.get(1)!.active = true;
+      await v.onTabActivated(1);
+      expect(b.plans(1).at(-1)).toMatchObject({ resume: true, title: 'Old page', faviconUrl: 'https://old.com/f.ico' });
+    });
+
+    it('a browser restart (new boot id) abandons a paused visit: nothing removed', async () => {
+      const id = await startShown();
+      await leaveBrowser();
+      b.boot = 'boot-2';
+      make();
+      now += GRACE_MS;
+      await v.onWake();
+      expect((await rt()).visit).toBeNull();
+      expect(b.removed).toEqual([]);
+      expect(b.cleared).toContain(awayId(id));
+    });
+  });
+
+  describe('other events during a pause', () => {
+    it('working mode switched off during a paused distracting visit abandons it and withdraws the warning', async () => {
+      await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+      b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', lastAccessed: T0 - 60_000 });
+      const id = await startShown();
+      await leaveBrowser();
+      await store.saveRuntime({ ...(await rt()), working: false });
+      await v.onWorkingOff();
+      expect((await rt()).visit).toBeNull();
+      expect(b.cleared).toContain(awayId(id));
+      expect(b.alarms.has(DEADLINE_ALARM)).toBe(false);
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+      expect(b.badges.at(-1)).toBe('');
+    });
+
+    it('activating a paused stale target is Keep', async () => {
+      const id = await startShown();
+      await switchAwayHelper();
+      b.tabs.get(3)!.active = false;
+      b.tabs.get(2)!.active = true;
+      await v.onTabActivated(2);
+      const r = await rt();
+      expect(r.visit).toBeNull();
+      expect(r.spared[2]).toBeDefined();
+      expect(b.removed).toEqual([]);
+      expect(id).toBeTruthy();
+    });
+
+    it('activating a paused distracting target replays with it as the stage and the full countdown', async () => {
+      await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+      b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', lastAccessed: T0 - 60_000 });
+      const id = await startShown();
+      await v.onEvent(1, id, { type: 'tick', remaining: 2 });
+      await leaveBrowser();
+      b.focused = true;
+      b.tabs.get(1)!.active = false;
+      b.tabs.get(4)!.active = true;
+      await v.onTabActivated(4);
+      const r = await rt();
+      expect(r.visit).toMatchObject({ stageTabId: 4, targetTabId: 4 });
+      expect(r.visit!.pause).toBeUndefined();
+      expect(b.plans(4).at(-1)).toMatchObject({ countdownSeconds: 5, targetIsStage: true });
+      expect(b.cleared).toContain(awayId(id));
+    });
+
+    it('the target closing during a pause abandons the visit', async () => {
+      await startShown();
+      await leaveBrowser();
+      b.tabs.delete(2);
+      await v.onTabGone(2);
+      expect((await rt()).visit).toBeNull();
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.removed).toEqual([]);
+    });
+
+    it('a hidden event while the stage is not in front pauses instead of abandoning', async () => {
+      const id = await startShown();
+      b.tabs.get(1)!.active = false;
+      b.tabs.get(3)!.active = true;
+      await v.onEvent(1, id, { type: 'hidden' });
+      expect((await rt()).visit?.pause).toBeDefined();
+    });
+
+    it('a stage-target take pending when the user switches away is dropped; the pause holds', async () => {
+      await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+      b.tabs.get(1)!.active = false;
+      b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', active: true, lastAccessed: T0 });
+      await v.tick();
+      const id = await visitId();
+      await v.onEvent(4, id, { type: 'card-shown' });
+      await v.onEvent(4, id, { type: 'take' });
+      b.tabs.get(4)!.active = false;
+      b.tabs.get(3)!.active = true;
+      await v.onTabActivated(3);
+      for (const t of timers.splice(0)) t.fn(); // the 800 ms take timer, and the deadline timer (early)
+      await v.idle();
+      await v.onEvent(4, id, { type: 'done' });
+      expect(b.removed).toEqual([]);
+      expect((await rt()).visit?.pause).toBeDefined();
+    });
+  });
+
+  describe('badge', () => {
+    it('"!" while paused, cleared on resume; the working dot is kept before and restored after', async () => {
+      await v.updateRuntime((r) => ({ ...r, working: true, workingSince: T0 }));
+      expect(b.badges.at(-1)).toBe(' ');
+      await startShown();
+      await switchAwayHelper();
+      expect(b.badges.at(-1)).toBe('!');
+      b.tabs.get(3)!.active = false;
+      b.tabs.get(1)!.active = true;
+      await v.onTabActivated(1);
+      expect(b.badges.at(-1)).toBe(' ');
+      await v.updateRuntime((r) => ({ ...r, working: false }));
+      expect(b.badges.at(-1)).toBe('');
+    });
+
+    it('cleared when a paused visit ends quietly', async () => {
+      await startShown();
+      await switchAwayHelper();
+      expect(b.badges.at(-1)).toBe('!');
+      now += GRACE_MS;
+      await v.onDeadline();
+      expect(b.badges.at(-1)).toBe('');
+    });
+  });
+
+  describe('the away-take guard', () => {
+    type Guard = { takeAllowed(v: ActiveVisit, path: 'card' | 'away'): Promise<boolean> };
+    const guard = () => v as unknown as Guard;
+    const paused = (over: Partial<NonNullable<ActiveVisit['pause']>> = {}): ActiveVisit => ({
+      visitId: 'v9', targetTabId: 2, targetUrl: 'https://old.com/page', stageTabId: 1, reason: 'stale', cardShown: false, startedAt: T0,
+      pause: { at: T0 - GRACE_MS - 10, bootId: 'boot-1', windowId: 1, notifyTried: true, notifiedAt: T0 - GRACE_MS,
+        notificationId: 'pockets-away:v9', plan: { visitId: 'v9', targetTabId: 2, title: 'Old page', reason: 'stale',
+          reasonText: 'x', tabIndex: 1, tabCount: 3, countdownSeconds: 5, targetIsStage: false }, ...over },
+    });
+    beforeEach(() => { b.focused = false; });
+
+    it('allows only a notification at least the grace period old, for this visit, unclicked, this boot, browser unfocused', async () => {
+      expect(await guard().takeAllowed(paused(), 'away')).toBe(true);
+      expect(await guard().takeAllowed(paused({ notifiedAt: T0 - GRACE_MS + 1 }), 'away')).toBe(false);
+      expect(await guard().takeAllowed(paused({ notifiedAt: undefined }), 'away')).toBe(false);
+      expect(await guard().takeAllowed(paused({ notificationId: undefined }), 'away')).toBe(false);
+      expect(await guard().takeAllowed(paused({ notificationId: 'pockets-away:other' }), 'away')).toBe(false);
+      expect(await guard().takeAllowed(paused({ clickedAt: T0 - 1 }), 'away')).toBe(false);
+      expect(await guard().takeAllowed(paused({ bootId: 'boot-0' }), 'away')).toBe(false);
+      b.anyFocused = true;
+      expect(await guard().takeAllowed(paused(), 'away')).toBe(false);
+    });
+
+    it('the card path never applies to a paused visit, even with cardShown', async () => {
+      expect(await guard().takeAllowed({ ...paused(), cardShown: true }, 'card')).toBe(false);
+      const { pause: _p, ...running } = paused();
+      expect(await guard().takeAllowed({ ...running, cardShown: true }, 'card')).toBe(true);
+      expect(await guard().takeAllowed({ ...running, cardShown: false }, 'card')).toBe(false);
+    });
+  });
+
+  async function switchAwayHelper() {
+    b.tabs.get(1)!.active = false;
+    b.tabs.get(3)!.active = true;
+    await v.onTabActivated(3);
+  }
 });

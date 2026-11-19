@@ -147,4 +147,106 @@ export const chromeBrowser: Browser = {
       /* nothing more to do; the entry stays in history */
     }
   },
+
+  async browserFocused() {
+    try {
+      return (await chrome.windows.getAll()).some((w) => w.focused);
+    } catch {
+      return true; // cannot tell: count as focused, which never allows an away take
+    }
+  },
+
+  async windowMinimized(windowId) {
+    try {
+      return (await chrome.windows.get(windowId)).state === 'minimized';
+    } catch {
+      return false;
+    }
+  },
+
+  async tabCountInWindow(windowId) {
+    try {
+      return (await chrome.tabs.query({ windowId })).length;
+    } catch {
+      return 0;
+    }
+  },
+
+  /** True only when the notification was created. A missing or denied permission, or any error, is false. */
+  async createNotification(id, n) {
+    try {
+      if (!chrome.notifications) return false;
+      if ((await chrome.notifications.getPermissionLevel()) !== 'granted') return false;
+      const created = await chrome.notifications.create(id, {
+        type: 'basic', iconUrl: chrome.runtime.getURL('assets/icons/icon-128.png'), title: n.title, message: n.message,
+        ...(n.buttons ? { buttons: n.buttons.map((title) => ({ title })) } : {}),
+      });
+      return created === id;
+    } catch {
+      return false;
+    }
+  },
+
+  async clearNotification(id) {
+    try {
+      await chrome.notifications?.clear(id);
+    } catch {
+      /* already gone */
+    }
+  },
+
+  async focusTab(tabId) {
+    try {
+      const t = await chrome.tabs.get(tabId);
+      await chrome.windows.update(t.windowId, { focused: true });
+      await chrome.tabs.update(tabId, { active: true });
+    } catch {
+      /* the tab or window is gone */
+    }
+  },
+
+  async setAlarm(name, when) {
+    try {
+      await chrome.alarms.create(name, { when });
+    } catch {
+      /* the minute tick still checks the deadline */
+    }
+  },
+
+  async clearAlarm(name) {
+    try {
+      await chrome.alarms.clear(name);
+    } catch {
+      /* nothing to clear */
+    }
+  },
+
+  async setBadge(text, color) {
+    try {
+      await chrome.action.setBadgeText({ text });
+      if (text) await chrome.action.setBadgeBackgroundColor({ color });
+    } catch {
+      /* cosmetic */
+    }
+  },
+
+  bootId() {
+    boot ??= (async () => {
+      try {
+        const got = (await chrome.storage.session.get(BOOT_KEY))[BOOT_KEY];
+        if (typeof got === 'string' && got) return got;
+        const id = crypto.randomUUID();
+        await chrome.storage.session.set({ [BOOT_KEY]: id });
+        return id;
+      } catch {
+        // Unknown run: a fresh id per worker, so a paused visit from an earlier worker is abandoned, never taken.
+        return 'unknown-' + crypto.randomUUID();
+      }
+    })();
+    return boot;
+  },
 };
+
+/** chrome.storage.session lives as long as the browser run (cleared on a browser restart or extension reload). */
+const BOOT_KEY = 'pocketsBootId';
+let boot: Promise<string> | null = null;
