@@ -922,3 +922,36 @@ describe('Fix round 2: removeTab checks the URL itself', () => {
     });
   });
 });
+
+describe('Visits: the card was hidden when the take was due', () => {
+  it('hidden after card-shown: nothing removed, visit cleared, target unmarked, nothing spared, the gap starts', async () => {
+    const id = await startShown();
+    for (const n of [3, 2, 1]) { now += 1000; await v.onEvent(1, id, { type: 'tick', remaining: n }); }
+    now += 1000;
+    await v.onEvent(1, id, { type: 'hidden' });
+    const r = await rt();
+    expect(b.removed).toEqual([]);
+    expect(r.visit).toBeNull();
+    expect(r.spared).toEqual({});
+    expect(r.lastStaleVisitEnd).toBe(now);
+    expect(await store.taken()).toEqual([]);
+    expect(b.to(2, 'pockets/unmark')).toHaveLength(1);
+    expect(b.to(1, 'pockets/cancel')).toEqual([{ type: 'pockets/cancel', visitId: id }]);
+    // A take arriving afterwards for the same visit closes nothing.
+    await v.onEvent(1, id, { type: 'take' });
+    expect(b.removed).toEqual([]);
+  });
+
+  it('hidden for a distracting visit: nothing removed, nothing spared, no gap', async () => {
+    await store.saveRuntime({ ...(await rt()), working: true, workingSince: T0 - HOUR });
+    b.add({ id: 4, url: 'https://www.youtube.com/watch?v=x', title: 'Video', lastAccessed: T0 - 60_000 });
+    const id = await startShown();
+    expect((await rt()).visit!.reason).toBe('distracting');
+    await v.onEvent(1, id, { type: 'hidden' });
+    const r = await rt();
+    expect(b.removed).toEqual([]);
+    expect(r.visit).toBeNull();
+    expect(r.spared[4]).toBeUndefined();
+    expect(r.lastStaleVisitEnd).toBe(0);
+  });
+});

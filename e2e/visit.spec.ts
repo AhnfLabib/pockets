@@ -392,3 +392,35 @@ test('iframe: typing into an input inside a frame of a stale tab means it is nev
   expect((await tabs(worker)).some((t) => t.id === typed.id), 'typed-in tab still open').toBe(true);
   expect((await taken(worker)).map((t) => t.url)).toEqual([youngerUrl]);
 });
+
+test('top layer: a full-viewport modal dialog opened after the card appears means the stale tab is NOT closed', async ({ context, worker, server }) => {
+  const s = await threeTabs(context, worker, {
+    target: serve(server, '/modal-target', page('m1')),
+    other: serve(server, '/modal-other', page('other')),
+    stage: serve(server, '/modal-stage', page('stage')),
+  });
+  await expectStaleSetup(worker, s.target.id, s.stage.id);
+
+  await testSet(worker, { settings: QUICK_STALE, tick: true });
+  const v = await waitVisit(worker, (x) => x.targetTabId === s.target.id, 'a stale visit for the target');
+  await waitVisit(worker, (x) => x.visitId === v.visitId && x.cardShown, 'card-shown on the stage');
+
+  // The page puts a full-viewport modal dialog in the top layer, over the stage and its card (the reproduction).
+  await s.stagePage.evaluate(() => {
+    const d = document.createElement('dialog');
+    d.style.cssText = 'width:100vw;height:100vh;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#0a0;';
+    d.textContent = 'MODAL';
+    document.body.appendChild(d);
+    d.showModal();
+  });
+  await shot(s.stagePage, 'modal-over-card');
+
+  // The countdown (3 s) ends while the card is covered: the stage reports hidden and the visit is abandoned.
+  await expect.poll(async () => (await runtime(worker))?.visit ?? null, { message: 'visit ended without a take', timeout: 15_000 }).toBeNull();
+  await sleep(2000);
+  expect((await tabs(worker)).map((t) => t.id).sort(), 'nothing closed').toEqual([s.target.id, s.other.id, s.stage.id].sort());
+  expect(await taken(worker)).toEqual([]);
+  expect((await runtime(worker))!.spared[String(s.target.id)], 'not spared').toBeUndefined();
+  // The target's title is put back (unmarked).
+  await expect.poll(async () => (await tabFor(worker, s.target.url)).title).toBe('m1');
+});

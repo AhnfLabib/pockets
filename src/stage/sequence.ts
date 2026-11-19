@@ -16,6 +16,8 @@ export interface CardView {
   /** Show the card with its top-left corner at `at` (viewport px). Resolves true once it is actually
    *  visible on screen, or false if the visit was cancelled first. */
   show(at: { left: number; top: number }, text: { title: string; sub: string }, onKeep: () => void): Promise<boolean>;
+  /** Whether the card is on screen right now (checked again just before a take). */
+  visible(): boolean;
   /** Show `remaining` of `total` seconds on the ring and the title ("Mine in 3…"). */
   count(remaining: number, total: number): void;
   /** Switch to the kept text and hide the Keep button. */
@@ -88,7 +90,9 @@ export function cardPosition(tx: number, width: number, reduced: boolean): { lef
 /**
  * Play one visit. Resolves after `done`, or as soon as `deps.signal` aborts (then nothing more is emitted).
  * Events: card-shown (only once the card is on screen), tick N … tick 1 a second apart, then either keep
- * (when Keep is clicked) or take (one second after tick 1), and done once Pockets has gone.
+ * (when Keep is clicked) or take (one second after tick 1), and done once Pockets has gone. If the card is not on
+ * screen when the take is due (say the page opened a modal dialog over it), hidden is emitted instead of take and
+ * the visit ends there, with no done.
  */
 export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: SequenceDeps): Promise<void> {
   const { signal, card, view, rand } = deps;
@@ -236,6 +240,12 @@ export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, d
       out({ type: 'keep' });
       card.kept('Fine. Keep it.', `Pockets will leave ${plan.title} alone for now.`);
       return 'keep';
+    }
+    // The take needs the card to be visible now, not only when it first showed.
+    if (!card.visible()) {
+      out({ type: 'hidden' });
+      card.hide();
+      return 'cancelled';
     }
     out({ type: 'take' });
     card.hide();

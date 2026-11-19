@@ -2,6 +2,7 @@
 //
 // Safety rules enforced here (see the design's "A visit" and the plan's Global Constraints):
 //   - A tab is closed only after the visit's own stage reported `card-shown` (persisted as rt.visit.cardShown).
+//   - A stage that finds its card no longer on screen when the take is due reports `hidden` instead: abandoned.
 //   - At take, the target is re-read: gone, a different URL, another window, pinned or typed into means close nothing.
 //   - Only rt.visit.targetTabId is ever passed to removeTab, with targetUrl; the adapter closes only if the URL still matches.
 //   - One visit at a time; only tabs in the focused window are candidates.
@@ -238,6 +239,11 @@ export class Visits {
       }
       case 'done':
         if (memo?.takePending) await this.completeStageTake(visitId);
+        return;
+      case 'hidden':
+        // The card was not on screen when the take was due (say, under a modal dialog): as if abandoned.
+        // Cancel, unmark, close nothing, spare nothing; a stale visit still starts the gap.
+        await this.abandon(rt, v);
         return;
       default:
         return;

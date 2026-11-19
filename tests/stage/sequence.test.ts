@@ -19,6 +19,8 @@ const plan = (over: Partial<VisitPlan> = {}): VisitPlan => ({
 
 interface FakeCard extends CardView {
   shownAt: { left: number; top: number } | null;
+  /** What visible() answers (the pre-take re-check). */
+  onScreen: boolean;
   pressKeep(): void;
   log: string[];
 }
@@ -27,6 +29,7 @@ function fakeCard(): FakeCard {
   let keep: (() => void) | null = null;
   const card: FakeCard = {
     shownAt: null,
+    onScreen: true,
     log: [],
     show(at, _text, onKeep) {
       card.shownAt = at;
@@ -34,6 +37,7 @@ function fakeCard(): FakeCard {
       card.log.push('show');
       return Promise.resolve(true);
     },
+    visible() { return card.onScreen; },
     count(n) { card.log.push(`count ${n}`); },
     kept() { card.log.push('kept'); },
     hide() { card.log.push('hide'); },
@@ -114,6 +118,33 @@ describe('runVisit', () => {
     s.stop();
     expect(types(s.events)).toEqual(['card-shown', 'tick 3', 'tick 2', 'keep', 'done']);
     expect(s.card.log).toContain('kept');
+  });
+
+  it('emits hidden instead of take, and no done, when the card is not on screen as the take is due', async () => {
+    const s = setup();
+    let resolved = false;
+    const p = runVisit(plan(), (e) => {
+      s.emit(e);
+      if (e.type === 'tick' && e.remaining === 1) s.card.onScreen = false;
+    }, s.deps).then(() => { resolved = true; });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await p;
+    s.stop();
+    expect(resolved).toBe(true);
+    expect(types(s.events)).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'hidden']);
+    expect(s.card.log.at(-1)).toBe('hide');
+  });
+
+  it('emits hidden instead of take with reduced motion too', async () => {
+    const s = setup({ reduced: true });
+    const p = runVisit(plan(), (e) => {
+      s.emit(e);
+      if (e.type === 'tick' && e.remaining === 2) s.card.onScreen = false;
+    }, s.deps);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await p;
+    s.stop();
+    expect(types(s.events)).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'hidden']);
   });
 
   it('puts the card at the top left (left edge <= 16 px) and never travels with reduced motion', async () => {

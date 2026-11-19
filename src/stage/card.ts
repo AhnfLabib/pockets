@@ -55,11 +55,34 @@ function noFocusSteal(b: HTMLButtonElement): void {
   b.addEventListener('mousedown', (e) => e.preventDefault());
 }
 
-/** Whether `el` is laid out, rendered and inside the viewport of a visible document. */
+/** `selector` matches something in `doc`; false where the browser does not know the selector. */
+function matches(doc: Document, selector: string): boolean {
+  try {
+    return doc.querySelector(selector) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Something in the page's top layer may be painted over the stage: an element other than the stage host is
+ *  fullscreen, or a modal dialog or a popover is open. The stage host is an ordinary element, so anything in the
+ *  top layer covers it. */
+function topLayerCovers(el: HTMLElement): boolean {
+  const doc = el.ownerDocument;
+  const root = el.getRootNode() as Node & { host?: Element };
+  const host = root !== doc ? root.host ?? null : null;
+  const fs = doc.fullscreenElement;
+  if (fs && fs !== host) return true;
+  return matches(doc, 'dialog:modal') || matches(doc, ':popover-open');
+}
+
+/** Whether `el` is laid out, rendered and inside the viewport of a visible document, with nothing in the top layer
+ *  (fullscreen element, modal dialog, popover) that could be painted over it. */
 export function onScreen(el: HTMLElement): boolean {
   const doc = el.ownerDocument;
   const win = doc.defaultView;
   if (!win || doc.visibilityState !== 'visible' || !el.isConnected) return false;
+  if (topLayerCovers(el)) return false;
   const r = el.getBoundingClientRect();
   if (r.width < 1 || r.height < 1) return false;
   if (r.right <= 0 || r.bottom <= 0 || r.left >= win.innerWidth || r.top >= win.innerHeight) return false;
@@ -166,6 +189,10 @@ export class Card implements CardView {
       };
       win.requestAnimationFrame(step);
     });
+  }
+
+  visible(): boolean {
+    return !this.el.hidden && onScreen(this.el);
   }
 
   count(remaining: number, total: number): void {
