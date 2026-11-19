@@ -243,7 +243,7 @@ export function drawPose(
     const u0 = Math.max(uMin, u1 - TAIL_SLICE);
     const mid = spine.at(((u0 + u1) / 2) / ustretch);
     const ang = angleOf(mid.dir) + Math.PI; // sprite +x points from tip to base
-    const ov = 0.35; // overlap each side so bends leave no seams
+    const ov = 0.75; // overlap each side so bends and antialiased edges leave no seams
     const a0 = Math.max(uMin, u0 - ov);
     const a1 = Math.min(uMax, u1 + ov);
     ctx.save();
@@ -266,10 +266,13 @@ export function drawPose(
     const mid = { x: (hip.x + f.x) / 2, y: (hip.y + f.y) / 2 };
     const back = i < 2 ? -1 : 1; // elbows bend back, knees forward
     const bend = { x: mid.x + fr.fwd.x * back * 30, y: mid.y + fr.fwd.y * back * 30 };
-    const j = legJoint(hip, f, LEG, LEG, bend);
-    spr('legUpper', hip, angleOf(sub(j, hip)), Math.max(1, Math.hypot(j.x - hip.x, j.y - hip.y) / LEG), 1);
-    const lowerLen = Math.hypot(f.x - j.x, f.y - j.y);
-    spr('legLower', j, angleOf(sub(f, j)), Math.max(1, lowerLen / LEG), 1);
+    // A planted foot can trail past full reach (up to the gait's snap distance) during fast runs:
+    // then the joint sits midway and both segments stretch equally so the lower leg still meets the paw.
+    const reach = Math.hypot(f.x - hip.x, f.y - hip.y);
+    const k = Math.max(1, reach / (2 * LEG));
+    const j = k > 1 ? mid : legJoint(hip, f, LEG, LEG, bend);
+    spr('legUpper', hip, angleOf(sub(j, hip)), k, 1);
+    spr('legLower', j, angleOf(sub(f, j)), k, 1);
     spr('paw', f, angleOf(fr.fwd), foot.stepping ? 1.15 : 1, foot.stepping ? 1.15 : 1);
   });
 

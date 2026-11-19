@@ -207,3 +207,37 @@ describe('drawPose', () => {
     expect(calls.findIndex((c) => c.op === 'fillText')).toBeGreaterThan(lastPupil);
   });
 });
+
+describe('drawPose legs out of reach', () => {
+  it('stretches the leg so the lower segment still ends at a foot 35 px from the hip', () => {
+    const pose = walkingPose();
+    // move the rear-left foot 35 px straight back from its hip (hip = hips node offset 8 to -side)
+    const n = pose.nodes;
+    const fl = Math.hypot(n[1].x - n[2].x, n[1].y - n[2].y);
+    const fwd = { x: (n[1].x - n[2].x) / fl, y: (n[1].y - n[2].y) / fl };
+    const side = { x: -fwd.y, y: fwd.x };
+    const sway = pose.sway * 2.4 * 1.2;
+    const hip = { x: n[2].x - side.x * sway - side.x * 8, y: n[2].y - side.y * sway - side.y * 8 };
+    const foot = { x: hip.x - fwd.x * 35, y: hip.y - fwd.y * 35 };
+    pose.feet[2] = { ...pose.feet[2], pos: foot, stepping: false };
+    const { ctx, calls } = fakeContext();
+    drawPose(ctx, pose, sprites, 0);
+    // the third leg's lower segment: translate to its joint, rotate, scale k; its far end = joint + dir * 10.5 * k
+    const lowers: { at: number[]; rot: number; k: number }[] = [];
+    calls.forEach((c, i) => {
+      if (c.op === 'drawImage' && partOf(c) === 'legLower') {
+        const tr = calls.slice(0, i).reverse();
+        const at = tr.find((x) => x.op === 'translate')!.args as number[];
+        const rot = tr.find((x) => x.op === 'rotate')!.args[0] as number;
+        const sc = tr.find((x) => x.op === 'scale' || x.op === 'save');
+        const k = sc && sc.op === 'scale' ? (sc.args[0] as number) : 1;
+        lowers.push({ at, rot, k });
+      }
+    });
+    const L = lowers[2];
+    const endX = L.at[0] + Math.cos(L.rot) * 10.5 * L.k;
+    const endY = L.at[1] + Math.sin(L.rot) * 10.5 * L.k;
+    expect(endX).toBeCloseTo(foot.x, 6);
+    expect(endY).toBeCloseTo(foot.y, 6);
+  });
+});
