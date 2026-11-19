@@ -28,8 +28,8 @@ function mulberry(seed: number): () => number {
   };
 }
 
-const chorFor = (seed: number, reason: 'stale' | 'distracting' = 'stale', pointerKnown = false): Choreography =>
-  planChoreography(mulberry(seed), { reduced: false, reason, pointerKnown });
+const chorFor = (seed: number, reason: 'stale' | 'distracting' = 'stale'): Choreography =>
+  planChoreography(mulberry(seed), { reduced: false, reason });
 
 /** The first seed whose visit matches `want` (the planner draws first, so this is what runVisit will play). */
 function seedWhere(want: (c: Choreography) => boolean, from = 1): number {
@@ -345,7 +345,7 @@ describe('runVisit on a large viewport with a moving rig', () => {
         for (const exit of EXITS) {
           const seed = seedWhere((c) => c.entrance === entrance && c.exit === exit, seedFrom);
           seedFrom = seed + 1;
-          const c = chorFor(seed, 'stale', true);
+          const c = chorFor(seed, 'stale');
           for (const keep of [false, true]) {
             const label = `${entrance} -> ${exit} seed ${seed} keep ${keep}`;
             const r = await movingVisit(seed, w, h, keep);
@@ -383,7 +383,7 @@ describe('runVisit on a large viewport with a moving rig', () => {
     let ran = 0;
     for (let seed = 1; seed <= 24; seed++) {
       const r = await movingVisit(seed, 1440, 900, false);
-      const planned = chorFor(seed, 'stale', true).quirks.map((q) => q.kind);
+      const planned = chorFor(seed, 'stale').quirks.map((q) => q.kind);
       expect(r.quirks.length).toBeLessThanOrEqual(2);
       for (const k of r.quirks) expect(planned).toContain(k);
       expect(r.quirkAfterShown).toBe(false);
@@ -425,7 +425,7 @@ describe('runVisit: quote and quirks', () => {
     let without = 0;
     for (let seed = 1; seed <= 16; seed++) {
       const r = await play(seed);
-      const quote = chorFor(seed, 'stale', true).quote;
+      const quote = chorFor(seed, 'stale').quote;
       const texts = r.said.filter((x) => x.text !== null);
       if (quote === null) { without++; expect(texts).toEqual([]); continue; }
       with_++;
@@ -461,7 +461,7 @@ describe('runVisit: quote and quirks', () => {
       const per = r.opts.map((o) => o?.quirks?.length ?? 0);
       expect(per[0]).toBe(0);
       expect(per[3]).toBe(0);
-      expect(per[1] + per[2]).toBe(chorFor(seed, 'stale', true).quirks.length);
+      expect(per[1] + per[2]).toBe(chorFor(seed, 'stale').quirks.length);
       expect(per[1] + per[2]).toBeLessThanOrEqual(2);
     }
   });
@@ -481,15 +481,14 @@ describe('planChoreography', () => {
     expect([...exits].sort()).toEqual([...EXITS].sort());
   });
 
-  it('plans 0 to 2 distinct quirks, all three counts occur, and lookAtPointer only with a known pointer', () => {
+  it('plans 0 to 2 distinct quirks and all three counts occur', () => {
     const counts = new Set<number>();
     const kinds = new Set<string>();
     for (let seed = 1; seed <= 300; seed++) {
-      for (const pointerKnown of [false, true]) {
-        const c = chorFor(seed, 'stale', pointerKnown);
+      {
+        const c = chorFor(seed, 'stale');
         expect(c.quirks.length).toBeLessThanOrEqual(2);
         expect(new Set(c.quirks.map((q) => q.kind)).size).toBe(c.quirks.length);
-        if (!pointerKnown) expect(c.quirks.some((q) => q.kind === 'lookAtPointer')).toBe(false);
         for (const q of c.quirks) {
           kinds.add(q.kind);
           if (q.kind === 'tiptoe') expect(q.leg).toBe('cross');
@@ -505,7 +504,7 @@ describe('planChoreography', () => {
   it('plans no quirks and no quote in reduced motion or on a resume', () => {
     for (let seed = 1; seed <= 100; seed++) {
       for (const o of [{ reduced: true }, { reduced: false, resume: true }]) {
-        const c = planChoreography(mulberry(seed), { ...o, reason: 'distracting', pointerKnown: true });
+        const c = planChoreography(mulberry(seed), { ...o, reason: 'distracting' });
         expect(c.quirks).toEqual([]);
         expect(c.quote).toBeNull();
       }

@@ -136,12 +136,12 @@ const pick = <T>(rand: () => number, list: readonly T[]): T => list[Math.min(lis
 
 /**
  * Draw one visit's entrance, exit, quirks (0-2) and quote (about half of visits) from `rand`, in a fixed order.
- * Reduced motion and resumed visits get no quirks and no quote. lookAtPointer is only picked when a pointer
- * position is known.
+ * Reduced motion and resumed visits get no quirks and no quote. The plan never depends on the pointer: the rig skips
+ * lookAtPointer when it comes due with no pointer position known.
  */
 export function planChoreography(
   rand: () => number,
-  opts: { reduced: boolean; resume?: boolean; reason: 'stale' | 'distracting'; pointerKnown: boolean },
+  opts: { reduced: boolean; resume?: boolean; reason: 'stale' | 'distracting' },
 ): Choreography {
   const entrance = pick(rand, ENTRANCES);
   const edgeY = 0.55 + rand() * 0.33;
@@ -152,7 +152,7 @@ export function planChoreography(
   if (!opts.reduced && !opts.resume) {
     const r = rand();
     const n = r < 0.3 ? 0 : r < 0.75 ? 1 : 2;
-    const pool = QUIRK_KINDS.filter((k) => k !== 'lookAtPointer' || opts.pointerKnown);
+    const pool = QUIRK_KINDS;
     for (let i = 0; i < n; i++) {
       const left = pool.filter((k) => !quirks.some((q) => q.kind === k));
       const kind = pick(rand, left);
@@ -250,7 +250,7 @@ function legQuirks(c: Choreography, leg: 'climb' | 'cross', from: Pt, path: Pt[]
   const len = pathLength(from, path);
   return c.quirks.filter((q) => q.leg === leg).map((q) => ({
     kind: q.kind, side: q.side, at: q.kind === 'tiptoe' ? Math.min(80, len * 0.4) : q.frac * len,
-    ...(q.kind === 'lookAtPointer' && pointer ? { lookAt: pointer } : {}),
+    ...(q.kind === 'lookAtPointer' ? { lookAt: pointer ?? (() => null) } : {}),
   }));
 }
 
@@ -334,7 +334,7 @@ async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: S
   const title = cleanTitle(plan.title);
   const text = { title: `Mine in ${total}…`, sub: `${title} · ${plan.reasonText}` };
   // Every random choice for the movement is drawn here, before any frame runs, so a seed always gives the same visit.
-  const chor = planChoreography(rand, { reduced: deps.reduced, resume: !!plan.resume, reason: plan.reason, pointerKnown: !!deps.pointer?.() });
+  const chor = planChoreography(rand, { reduced: deps.reduced, resume: !!plan.resume, reason: plan.reason });
   const route = entranceRoute(chor, view, rand);
   const cross = crossRoute(route.side, tx, view, rand);
   let quoteTimer: ReturnType<typeof setTimeout> | undefined;

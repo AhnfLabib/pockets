@@ -161,7 +161,7 @@ test('cancel with no animation frames (hidden tab) mid-climb: play resolves, not
 });
 
 test('every quote fits the bubble in at most two lines at the rendered font', async ({ page }) => {
-  const { QUOTES, BUBBLE_LINE_PX, BUBBLE_MAX_WIDTH } = await import('../src/stage/quotes');
+  const { QUOTES, BUBBLE_LINE_PX, BUBBLE_MAX_WIDTH, BUBBLE_CHAR_PX } = await import('../src/stage/quotes');
   await open(page);
   const lines = [...QUOTES.general, ...QUOTES.distracting, ...QUOTES.riffs];
   const sizes = await page.evaluate((all) => {
@@ -174,7 +174,16 @@ test('every quote fits the bubble in at most two lines at the rendered font', as
       b.textContent = text;
       const cs = getComputedStyle(b);
       const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
-      return { text, lines: Math.round((b.offsetHeight - pad) / parseFloat(cs.lineHeight)), width: b.offsetWidth, pe: cs.pointerEvents };
+      const lines = Math.round((b.offsetHeight - pad) / parseFloat(cs.lineHeight));
+      const width = b.offsetWidth;
+      b.style.whiteSpace = 'nowrap';
+      b.style.maxWidth = 'none';
+      const range = root.ownerDocument.createRange();
+      range.selectNodeContents(b);
+      const textPx = range.getBoundingClientRect().width;
+      b.style.whiteSpace = '';
+      b.style.maxWidth = '';
+      return { text, lines, width, pe: cs.pointerEvents, perChar: textPx / text.length };
     });
     b.remove();
     return out;
@@ -183,6 +192,8 @@ test('every quote fits the bubble in at most two lines at the rendered font', as
     expect(s.lines, s.text).toBeLessThanOrEqual(2);
     expect(s.width, s.text).toBeLessThanOrEqual(BUBBLE_MAX_WIDTH);
     expect(s.pe).toBe('none');
+    // The unit test's character budget must be at least the real average advance of each line.
+    expect(s.perChar, s.text).toBeLessThanOrEqual(BUBBLE_CHAR_PX);
   }
   expect(BUBBLE_LINE_PX).toBeGreaterThan(0);
 });
@@ -200,7 +211,7 @@ async function quoteSeed(): Promise<number> {
       return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
     };
   };
-  for (let s = 1; ; s++) if (planChoreography(mulberry(s), { reduced: false, reason: 'stale', pointerKnown: false }).quote) return s;
+  for (let s = 1; ; s++) if (planChoreography(mulberry(s), { reduced: false, reason: 'stale' }).quote) return s;
 }
 
 test('quote bubble: shown by Pockets on entry, ignores the pointer, gone before the card', async ({ page }) => {
@@ -208,12 +219,23 @@ test('quote bubble: shown by Pockets on entry, ignores the pointer, gone before 
   const seed = await quoteSeed();
   await page.evaluate((s) => { (window as any).__pockets.nextSeed = s; }, seed);
   await page.click('#play');
+  // The first frame it is painted (polled every animation frame) must already be where it stays while Pockets looks
+  // around: never a flash at a stale or default position.
   const bubble = await page.waitForFunction(() => {
     const b = (window as any).__pockets.root.querySelector('.bubble') as HTMLElement;
-    if (b.hidden) return null;
+    if (b.hidden || getComputedStyle(b).visibility !== 'visible') return null;
     const r = b.getBoundingClientRect();
     return { text: b.textContent, pe: getComputedStyle(b).pointerEvents, tab: b.tabIndex, aria: b.getAttribute('aria-hidden'), r: { l: r.left, t: r.top, w: r.width, h: r.height } };
-  }, null, { timeout: 10_000 }).then((h) => h.jsonValue());
+  }, null, { timeout: 10_000, polling: 'raf' }).then((h) => h.jsonValue());
+  await page.waitForTimeout(300);
+  const later = await page.evaluate(() => {
+    const r = ((window as any).__pockets.root.querySelector('.bubble') as HTMLElement).getBoundingClientRect();
+    return { l: r.left, t: r.top, w: r.width, h: r.height };
+  });
+  // Centre, not corner: the pop's scale moves the corner by up to 5% of the size.
+  expect(Math.abs(later.l + later.w / 2 - (bubble!.r.l + bubble!.r.w / 2))).toBeLessThan(6);
+  expect(Math.abs(later.t + later.h / 2 - (bubble!.r.t + bubble!.r.h / 2))).toBeLessThan(6);
+  expect(bubble!.r.w).toBeGreaterThanOrEqual(later.w * 0.88); // the pop scales in from 0.9
   expect(bubble!.text!.length).toBeGreaterThan(0);
   expect(bubble!.pe).toBe('none');
   expect(bubble!.aria).toBe('true');

@@ -195,6 +195,8 @@ export class Rig {
       if (Math.hypot(g.x - head.x, g.y - head.y) < 45) return;
     }
     this.pending.shift();
+    // Looking at the pointer needs a pointer on the page right now; otherwise the quirk is skipped.
+    if (next.kind === 'lookAtPointer' && !next.lookAt?.()) return;
     const dur = QUIRK_SECONDS[next.kind];
     this.quirk = { q: next, t: 0, dur, freezeLook: this.head.angle, sniffTick: -1, base: s.base };
     this.quirkLog.push(next.kind);

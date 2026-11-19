@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Rig } from '../../../src/stage/rig/rig';
+import { QUIRK_KINDS, QUIRK_SECONDS, Rig } from '../../../src/stage/rig/rig';
 import { LINKS } from '../../../src/stage/rig/chain';
 
 const DT = 1 / 60;
@@ -135,5 +135,52 @@ describe('rig', () => {
     expect(q.feet[0].stepping).toBe(false);
     expect(q.feet[0].from.x).not.toBe(p.feet[0].from.x);
     expect(q.feet[0].to.x).not.toBe(p.feet[0].to.x);
+  });
+});
+
+describe('Rig quirks', () => {
+  const runUntil = (r: Rig, done: () => boolean, max = 30) => { let t = 0; while (!done() && t < max) { r.update(1 / 60); t += 1 / 60; } return t; };
+
+  it('every quirk lasts at most 1.5 s', () => {
+    for (const k of QUIRK_KINDS) expect(QUIRK_SECONDS[k], k).toBeLessThanOrEqual(1.5);
+  });
+
+  it('runs each stopping quirk on the way, then arrives with none left running', async () => {
+    for (const kind of QUIRK_KINDS.filter((k) => k !== 'tiptoe')) {
+      const r = new Rig({ start: { x: 0, y: 0 }, heading: 0, rand: seeded(4) });
+      let arrived = false;
+      void r.travel([{ x: 300, y: 0 }, { x: 600, y: 0 }], 198, { quirks: [{ kind, at: 120, side: 1, lookAt: () => ({ x: 200, y: 300 }) }] })
+        .then((a) => { arrived = a; });
+      let sawIt = false;
+      runUntil(r, () => { if (r.quirking) sawIt = true; const h = r.pose().nodes[0]; return Math.hypot(h.x - 600, h.y) < 0.01; });
+      await Promise.resolve();
+      expect(arrived, kind).toBe(true);
+      expect(sawIt, kind).toBe(true);
+      expect(r.quirking, kind).toBe(false);
+      expect(r.quirkLog, kind).toEqual([kind]);
+    }
+  });
+
+  it('skips lookAtPointer when no pointer position is known when it comes due', async () => {
+    const r = new Rig({ start: { x: 0, y: 0 }, heading: 0, rand: seeded(4) });
+    void r.travel([{ x: 300, y: 0 }, { x: 600, y: 0 }], 198, { quirks: [{ kind: 'lookAtPointer', at: 120, side: 1, lookAt: () => null }] });
+    runUntil(r, () => { const h = r.pose().nodes[0]; return Math.hypot(h.x - 600, h.y) < 0.01; });
+    expect(r.quirkLog).toEqual([]);
+  });
+
+  it('tiptoes near the end of the path', () => {
+    const r = new Rig({ start: { x: 0, y: 0 }, heading: 0, rand: seeded(4) });
+    void r.travel([{ x: 300, y: 0 }, { x: 600, y: 0 }], 198, { rest: false, quirks: [{ kind: 'tiptoe', at: 80, side: 1 }] });
+    let startX = -1;
+    runUntil(r, () => { if (r.quirking && startX < 0) startX = r.pose().nodes[0].x; const h = r.pose().nodes[0]; return Math.hypot(h.x - 600, h.y) < 0.01; });
+    expect(r.quirkLog).toEqual(['tiptoe']);
+    expect(startX).toBeGreaterThan(600 - 90);
+  });
+
+  it('ignores quirks in still mode (reduced motion)', () => {
+    const r = new Rig({ start: { x: 0, y: 0 }, heading: 0, rand: seeded(4), still: true });
+    void r.travel([{ x: 300, y: 0 }], 198, { quirks: [{ kind: 'scratch', at: 0, side: 1 }] });
+    for (let i = 0; i < 120; i++) r.update(1 / 60);
+    expect(r.quirkLog).toEqual([]);
   });
 });

@@ -2,9 +2,9 @@
 
 Pockets is a raccoon who lives in Chrome and takes your tabs.
 
-Every so often it pokes its head in at the bottom of the page you are on, climbs the left edge, crosses to
-under the tab it has its eye on and says so: "Mine in 5…". The tab's own title counts down with it. If you do
-nothing, the tab is gone and Pockets bolts off the bottom of the screen with it. It never apologises.
+Every so often it pokes its head in from an edge of the page you are on (sometimes with a remark), climbs the
+nearer side, crosses to under the tab it has its eye on and says so: "Mine in 5…". The tab's own title counts down
+with it. If you do nothing, the tab is gone and Pockets bolts off the page with it. It never apologises.
 
 - **Stale tabs, always.** A tab you have not opened for 24 hours is fair game.
 - **Distracting tabs, while you are working.** Switch working mode on from the toolbar button, and tabs on your

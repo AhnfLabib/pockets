@@ -358,6 +358,8 @@ export class Bubble {
   say(text: string | null): void {
     if (text === null) { this.hide(); return; }
     this.el.textContent = text;
+    // Not painted until place() has put it by Pockets: a stale position must never show.
+    this.el.style.visibility = 'hidden';
     this.el.hidden = false;
     this.size = null;
   }
@@ -381,6 +383,9 @@ export class Bubble {
     left = Math.max(8, Math.min(width - 8 - w, left));
     top = Math.max(8, Math.min(height - 8 - h, top));
     this.el.className = `bubble ${up ? 'up' : 'down'} ${east ? 'east' : 'west'}`;
-    this.el.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    // left/top, not transform: the pop animation animates transform and would override it while it runs.
+    this.el.style.left = `${Math.round(left)}px`;
+    this.el.style.top = `${Math.round(top)}px`;
+    this.el.style.visibility = 'visible';
   }
 }
