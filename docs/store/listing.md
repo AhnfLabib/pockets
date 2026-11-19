@@ -17,7 +17,7 @@ A hand-drawn raccoon who takes the tabs you forgot about. Warns you first, lets 
 
 Forty tabs open and half of them are from last week? Pockets takes care of it.
 
-Pockets is a small hand-drawn raccoon in a red neckerchief. When a tab has sat unopened for a day, he pokes his head in at the bottom of the page you are on, climbs up to the tab bar, and gives you five seconds' warning. Leave it, and he grabs the tab in his mouth and runs off with it. Change your mind, and Undo brings it straight back.
+Pockets is a small hand-drawn raccoon in a red neckerchief. When a tab has sat unopened for a day, he pokes his head in from the edge of the page you are on, climbs up to the tab bar, and gives you five seconds' warning. Sometimes he has something to say on the way in. Leave it, and he grabs the tab in his mouth and runs off with it. Change your mind, and Undo brings it straight back.
 
 HOW IT WORKS
 • Tabs you haven't opened for a day get taken, one at a time.
