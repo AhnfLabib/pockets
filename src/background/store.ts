@@ -1,7 +1,9 @@
 import type { ActiveVisit, Reason, RuntimeState, Settings, Spare } from '../shared/types';
 import { clampSettings } from '../shared/defaults';
 
-export interface TakenTab { title: string; url: string; favIconUrl?: string; takenAt: number; reason: Reason; sessionId?: string }
+export interface TakenTab { title: string; url: string; favIconUrl?: string; takenAt: number; reason: Reason; sessionId?: string;
+  /** The tab the in-page Undo notice was sent to: only that tab's top frame may ask to undo this take. */
+  noticeTabId?: number }
 
 /** Backed by chrome.storage.local (wrapped) in production, a Map in tests. */
 export interface KV { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }

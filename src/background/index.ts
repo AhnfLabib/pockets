@@ -5,7 +5,7 @@ import { Visits } from './visit';
 import { Store, forgetTab, setWorking } from './store';
 import { chromeBrowser } from './chrome-browser';
 import { chromeKV } from './kv';
-import { isExtensionPage } from './sender';
+import { canUndo, isExtensionPage } from './sender';
 import type { ToBackground } from '../shared/types';
 
 const ALARM = 'pockets-tick';
@@ -50,7 +50,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   const m = msg as ToBackground;
   // Only our own pages (popup, options) may change settings-like state; content scripts run on web pages.
-  if ((m.type === 'pockets/set-working' || m.type === 'pockets/undo') && !isExtensionPage(sender.url, chrome.runtime.getURL(''))) {
+  if (m.type === 'pockets/set-working' && !isExtensionPage(sender.url, chrome.runtime.getURL(''))) {
     sendResponse({ ok: false });
     return false;
   }
@@ -82,7 +82,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       break;
     case 'pockets/undo':
-      if (typeof m.takenAt === 'number' && Number.isFinite(m.takenAt)) void visits.undo(m.takenAt);
+      if (typeof m.takenAt === 'number' && Number.isFinite(m.takenAt)) {
+        const takenAt = m.takenAt;
+        // Extension pages, or the top frame of the tab that was shown this take's notice.
+        void store.taken().then((all) => {
+          if (canUndo(sender, all.find((t) => t.takenAt === takenAt), chrome.runtime.getURL(''))) return visits.undo(takenAt);
+        });
+      }
       break;
   }
   return false;

@@ -301,13 +301,21 @@ export class Visits {
     await this.store.saveRuntime({ ...(await this.store.runtime()), ...bookkeeping });
 
     const notice: ToContent = { type: 'pockets/notice', title, takenAt };
+    let noticeTabId: number | undefined;
     if (v.stageTabId !== v.targetTabId) {
-      await this.browser.send(v.stageTabId, notice);
+      noticeTabId = v.stageTabId;
     } else {
       const win = await this.browser.tabsInFocusedWindow();
-      const active = win?.tabs.find((t) => t.active && t.id !== v.targetTabId);
-      if (active) await this.browser.send(active.id, notice);
+      noticeTabId = win?.tabs.find((t) => t.active && t.id !== v.targetTabId)?.id;
     }
+    if (noticeTabId === undefined) return;
+    // Remember who was shown the notice, so only that tab can ask for this undo. Saved before sending.
+    const saved = (await this.store.taken()).find((t) => t.takenAt === takenAt);
+    if (saved) {
+      await this.store.removeTaken(takenAt);
+      await this.store.addTaken({ ...saved, noticeTabId });
+    }
+    await this.browser.send(noticeTabId, notice);
   }
 
   /** The target or the stage closed or navigated: abandon, close nothing. */

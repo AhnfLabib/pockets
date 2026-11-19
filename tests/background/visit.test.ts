@@ -1,3 +1,4 @@
+import { canUndo } from '../../src/background/sender';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Visits, type Browser } from '../../src/background/visit';
 import { Store, type KV } from '../../src/background/store';
@@ -135,7 +136,7 @@ describe('Visits: happy path', () => {
     expect(b.removed).toEqual([2]);
     const taken = await store.taken();
     expect(taken).toEqual([{ title: 'Old page', url: 'https://old.com/page', favIconUrl: 'https://old.com/f.ico', takenAt: now,
-      reason: 'stale', sessionId: 'sess-1' }]);
+      reason: 'stale', sessionId: 'sess-1', noticeTabId: 1 }]);
     expect(b.sessionUrls).toEqual(['https://old.com/page']);
     const r = await rt();
     expect(r.visit).toBeNull();
@@ -624,6 +625,23 @@ describe('Visits: updateRuntime', () => {
     const r = await rt();
     expect(r.typedIn).toEqual([3]);
     expect(r.visit).not.toBeNull();
+  });
+});
+
+describe('Visits: in-page undo end to end', () => {
+  it('records the notice tab; undo is allowed from it only', async () => {
+    const id = await startShown();
+    await v.onEvent(1, id, { type: 'take' });
+    const entry = (await store.taken())[0];
+    expect(entry.noticeTabId).toBe(1);
+    expect(b.to(1, 'pockets/notice')).toHaveLength(1);
+    const senderOk = { url: 'https://work.com/doc', frameId: 0, tab: { id: 1 } };
+    const senderOther = { url: 'https://fresh.com/', frameId: 0, tab: { id: 3 } };
+    if (canUndo(senderOther, entry, 'chrome-extension://x/')) await v.undo(entry.takenAt);
+    expect(b.opened).toEqual([]);
+    expect(b.restored).toEqual([]);
+    if (canUndo(senderOk, entry, 'chrome-extension://x/')) await v.undo(entry.takenAt);
+    expect(b.restored).toEqual(['sess-1']);
   });
 });
 
