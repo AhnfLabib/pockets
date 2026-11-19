@@ -159,3 +159,72 @@ test('cancel with no animation frames (hidden tab) mid-climb: play resolves, not
   expect(await cancelWithoutFrames(page)).toEqual({ settled: true, events: [] });
   expect(errors).toEqual([]);
 });
+
+test('every quote fits the bubble in at most two lines at the rendered font', async ({ page }) => {
+  const { QUOTES, BUBBLE_LINE_PX, BUBBLE_MAX_WIDTH } = await import('../src/stage/quotes');
+  await open(page);
+  const lines = [...QUOTES.general, ...QUOTES.distracting, ...QUOTES.riffs];
+  const sizes = await page.evaluate((all) => {
+    const root: ShadowRoot = (window as any).__pockets.root;
+    const wrap = root.querySelector('.wrap')!;
+    const b = root.ownerDocument.createElement('div');
+    b.className = 'bubble down east';
+    wrap.appendChild(b);
+    const out = all.map((text: string) => {
+      b.textContent = text;
+      const cs = getComputedStyle(b);
+      const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+      return { text, lines: Math.round((b.offsetHeight - pad) / parseFloat(cs.lineHeight)), width: b.offsetWidth, pe: cs.pointerEvents };
+    });
+    b.remove();
+    return out;
+  }, lines);
+  for (const s of sizes) {
+    expect(s.lines, s.text).toBeLessThanOrEqual(2);
+    expect(s.width, s.text).toBeLessThanOrEqual(BUBBLE_MAX_WIDTH);
+    expect(s.pe).toBe('none');
+  }
+  expect(BUBBLE_LINE_PX).toBeGreaterThan(0);
+});
+
+/** A seed whose visit says something (the planner is pure, so the e2e picks it the same way the stage will). */
+async function quoteSeed(): Promise<number> {
+  const { planChoreography } = await import('../src/stage/sequence');
+  const mulberry = (seed: number) => {
+    let a = seed >>> 0;
+    return () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
+    };
+  };
+  for (let s = 1; ; s++) if (planChoreography(mulberry(s), { reduced: false, reason: 'stale', pointerKnown: false }).quote) return s;
+}
+
+test('quote bubble: shown by Pockets on entry, ignores the pointer, gone before the card', async ({ page }) => {
+  const errors = await open(page);
+  const seed = await quoteSeed();
+  await page.evaluate((s) => { (window as any).__pockets.nextSeed = s; }, seed);
+  await page.click('#play');
+  const bubble = await page.waitForFunction(() => {
+    const b = (window as any).__pockets.root.querySelector('.bubble') as HTMLElement;
+    if (b.hidden) return null;
+    const r = b.getBoundingClientRect();
+    return { text: b.textContent, pe: getComputedStyle(b).pointerEvents, tab: b.tabIndex, aria: b.getAttribute('aria-hidden'), r: { l: r.left, t: r.top, w: r.width, h: r.height } };
+  }, null, { timeout: 10_000 }).then((h) => h.jsonValue());
+  expect(bubble!.text!.length).toBeGreaterThan(0);
+  expect(bubble!.pe).toBe('none');
+  expect(bubble!.aria).toBe('true');
+  expect(bubble!.tab).toBe(-1);
+  const frame = await page.locator('#page').boundingBox();
+  expect(bubble!.r.l).toBeGreaterThanOrEqual(0);
+  expect(bubble!.r.t).toBeGreaterThanOrEqual(0);
+  expect(bubble!.r.l + bubble!.r.w).toBeLessThanOrEqual(frame!.width);
+  expect(bubble!.r.t + bubble!.r.h).toBeLessThanOrEqual(frame!.height);
+  await waitForEvent(page, 'card-shown');
+  expect(await page.evaluate(() => ((window as any).__pockets.root.querySelector('.bubble') as HTMLElement).hidden)).toBe(true);
+  await waitForEvent(page, 'done');
+  expect(errors).toEqual([]);
+});

@@ -2,6 +2,7 @@
 // Neither ever calls focus(); their buttons are the only focusable things on the stage, and a hidden card or
 // notice is display:none so its button leaves the tab order.
 import { CARD_WIDTH, CARD_MARGIN, type CardView } from './sequence';
+import { BUBBLE_FONT_PX, BUBBLE_LINE_PX, BUBBLE_MAX_WIDTH, BUBBLE_PAD_X } from './quotes';
 import { cleanTitle } from '../shared/title';
 
 /** Styles for everything inside the shadow root. The host itself is reset with `all: initial` in mount.ts. */
@@ -42,10 +43,20 @@ button[hidden]{display:none}
   animation:rise .25s ease-out}
 .notice img{width:24px;height:24px;flex:none;display:block}
 .notice span{min-width:0;overflow-wrap:anywhere}
+.bubble{position:absolute;left:0;top:0;pointer-events:none;width:max-content;max-width:${BUBBLE_MAX_WIDTH}px;
+  padding:6px ${BUBBLE_PAD_X}px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  color:var(--ink);font-size:${BUBBLE_FONT_PX}px;font-weight:500;line-height:${BUBBLE_LINE_PX}px;overflow-wrap:break-word;margin:0;
+  animation:pop .18s ease-out}
+.bubble[hidden]{display:none}
+.bubble::after{content:"";position:absolute;width:10px;height:10px;background:var(--surface);border:1px solid var(--line);transform:rotate(45deg)}
+.bubble.down::after{bottom:-6px;border-top:0;border-left:0}
+.bubble.up::after{top:-6px;border-bottom:0;border-right:0}
+.bubble.east::after{left:14px}
+.bubble.west::after{right:14px}
 @keyframes pop{from{transform:scale(.9)}to{transform:none}}
 @keyframes fade{to{opacity:0;transform:scale(.95)}}
 @keyframes rise{from{transform:translateY(12px)}to{transform:none}}
-@media (prefers-reduced-motion: reduce){.card,.card.leaving,.notice{animation:none}.ring .fg{transition:none}}
+@media (prefers-reduced-motion: reduce){.card,.card.leaving,.notice,.bubble{animation:none}.ring .fg{transition:none}}
 `;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -324,5 +335,52 @@ export class Notice {
     this.doc.defaultView?.clearTimeout(this.timer);
     this.onUndo = null;
     this.el.hidden = true;
+  }
+}
+
+/** Pockets' speech bubble: never focusable, never in the way of the pointer, hidden from assistive tech (the card
+ *  carries everything that matters). mount.ts places it by his head every frame. */
+export class Bubble {
+  readonly el: HTMLDivElement;
+  private size: { w: number; h: number } | null = null;
+
+  constructor(doc: Document, parent: Node) {
+    const el = doc.createElement('div');
+    el.className = 'bubble down east';
+    el.hidden = true;
+    el.setAttribute('aria-hidden', 'true');
+    parent.appendChild(el);
+    this.el = el;
+  }
+
+  get shown(): boolean { return !this.el.hidden; }
+
+  say(text: string | null): void {
+    if (text === null) { this.hide(); return; }
+    this.el.textContent = text;
+    this.el.hidden = false;
+    this.size = null;
+  }
+
+  hide(): void {
+    this.el.hidden = true;
+    this.size = null;
+  }
+
+  /** Put the bubble beside `head` (viewport px): toward the middle of the page, above unless there is no room, and
+   *  always inside the viewport. Its tail points back at him. */
+  place(head: { x: number; y: number }, width: number, height: number): void {
+    if (this.el.hidden) return;
+    if (!this.size) this.size = { w: this.el.offsetWidth, h: this.el.offsetHeight };
+    const { w, h } = this.size;
+    const east = head.x < width / 2;
+    let left = east ? head.x + 6 : head.x - 6 - w;
+    let top = head.y - 30 - h;
+    const up = top < 8;
+    if (up) top = head.y + 30;
+    left = Math.max(8, Math.min(width - 8 - w, left));
+    top = Math.max(8, Math.min(height - 8 - h, top));
+    this.el.className = `bubble ${up ? 'up' : 'down'} ${east ? 'east' : 'west'}`;
+    this.el.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
   }
 }

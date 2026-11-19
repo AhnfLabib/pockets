@@ -4,7 +4,7 @@
 import { Rig } from './rig/rig';
 import type { Pt } from './rig/chain';
 import { drawPose, type Sprites } from './render';
-import { Card, Notice, STAGE_CSS } from './card';
+import { Bubble, Card, Notice, STAGE_CSS } from './card';
 import { runVisit, type Carry } from './sequence';
 import type { VisitEvent, VisitPlan } from '../shared/types';
 import { cleanTitle } from '../shared/title';
@@ -21,7 +21,7 @@ export interface Stage {
 }
 
 export interface StageOptions {
-  /** Randomness for the rig and the path jitter. Defaults to Math.random. */
+  /** Randomness for the rig and every per-visit choice (entrance, exit, quirks, quote). Defaults to Math.random. */
   rand?: () => number;
   /** Decoded sprites (render.ts loadSprites). The stage never loads anything from the extension package itself. */
   sprites: Sprites;
@@ -175,6 +175,7 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
   root.append(style, wrap);
   const card = new Card(host, wrap);
   const notice = new Notice(host, wrap, opts.iconUrl);
+  const bubble = new Bubble(host, wrap);
   (host.documentElement ?? host.body).appendChild(el);
   opts.exposeRoot?.(root);
 
@@ -193,6 +194,15 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
   };
   size();
   win.addEventListener('resize', size);
+
+  // Where the pointer last was on this page, for Pockets to glance at. Kept in memory only; forgotten when it leaves.
+  let pointer: Pt | null = null;
+  const onMove = (e: PointerEvent): void => { pointer = { x: e.clientX, y: e.clientY }; };
+  const onOut = (e: PointerEvent): void => { if (!e.relatedTarget) pointer = null; };
+  const onBlur = (): void => { pointer = null; };
+  win.addEventListener('pointermove', onMove, { capture: true, passive: true });
+  win.addEventListener('pointerout', onOut, { capture: true, passive: true });
+  win.addEventListener('blur', onBlur);
 
   // One visit at a time.
   let rig: Rig | null = null;
@@ -220,6 +230,7 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
       const pose = rig.pose();
       const held = carry?.phase === 'held' ? { title, faviconColor: color } : undefined;
       drawPose(ctx, pose, sprites, t, held);
+      bubble.place(pose.nodes[0], W, H);
       if (carry?.phase === 'drop') {
         const k = Math.min(1, (ts - carry.at) / carry.ms);
         const e = k * k;
@@ -251,6 +262,7 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
     visible = false;
     carry = null;
     card.hideNow();
+    bubble.hide();
     stopLoop();
   };
 
@@ -285,6 +297,11 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
           setVisible: (on) => {
             visible = on;
           },
+          say: (text) => {
+            if (abort === ac && !reduced) bubble.say(text);
+            else bubble.hide();
+          },
+          pointer: () => pointer,
         });
       } finally {
         if (abort === ac) {
@@ -292,6 +309,7 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
           rig = null;
           visible = false;
           carry = null;
+          bubble.hide();
           stopLoop();
         }
       }
@@ -305,6 +323,9 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
       cancel();
       notice.hide();
       win.removeEventListener('resize', size);
+      win.removeEventListener('pointermove', onMove, { capture: true });
+      win.removeEventListener('pointerout', onOut, { capture: true });
+      win.removeEventListener('blur', onBlur);
       el.remove();
     },
   };
