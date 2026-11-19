@@ -5,6 +5,8 @@
 //   pass             test is green
 //   fail             a soft assertion fails, so the test is red but the remaining checks still run
 //   could not verify test.skip() at runtime with the reason
+// Exception: test 5's assumption failed (docs/verification.md, row 5), so it asserts that recorded failure and is
+// green while Chromium still behaves that way; it turns red if the behaviour changes.
 //
 // The stubs only answer `pockets/ping`, so where a test needs the content script to act it runs
 // code in the tab's isolated world with chrome.scripting.executeScript, which is the same world
@@ -390,9 +392,14 @@ test('4. stage draws under strict CSP', async ({ context, worker, server }) => {
 // Runs in the raw browser: chrome.tabs.discard crashes Chromium while Playwright is attached to the
 // pages (observed in Task 1; see docs/verification.md).
 test('5. discarded tabs', async ({ userDataDir, server }) => {
-  // Expected failure: the icon and title swap does not show on a discarded tab (docs/verification.md,
-  // row 5). Kept as an executable record; if this ever starts passing, Playwright reports it.
-  test.fail();
+  // Assumption 5 failed: the icon and title swap does not show on a discarded tab (docs/verification.md, row 5).
+  // The test asserts that observed outcome, so it is green while Chromium behaves as recorded and turns red if the
+  // swap ever starts to show (or the tab wakes, or Chromium crashes).
+  //
+  // It used to be marked test.fail() with the opposite assertions. Playwright's list reporter prints a red cross for
+  // an expected failure on every run while counting it as passed, which was read as an intermittent failure in
+  // full-suite runs (Task 13: "13 pass, 1 fail" with 13 tests). test.fail() also hid any real error, such as the raw
+  // browser failing to attach, as an "expected" failure.
   const browser = await launchRawExtensionBrowser(userDataDir);
   try {
     const title = 'Pockets swapped title';
@@ -439,8 +446,8 @@ test('5. discarded tabs', async ({ userDataDir, server }) => {
 
     expect.soft(browser.crashed(), 'Chromium did not crash').toBe(false);
     expect.soft(out.tab.discarded, 'tab stayed discarded (the attempt did not wake it)').toBe(true);
-    expect.soft(out.tab.title, 'title swapped on a discarded tab').toBe(title);
-    expect.soft(out.tab.favIconUrl, 'icon swapped on a discarded tab').toBe(RED_ICON);
+    expect.soft(out.tab.title, 'title NOT swapped on a discarded tab (as recorded)').not.toBe(title);
+    expect.soft(out.tab.favIconUrl, 'icon NOT swapped on a discarded tab (as recorded)').not.toBe(RED_ICON);
 
     note(
       'finding',
