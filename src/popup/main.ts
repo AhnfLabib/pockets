@@ -4,6 +4,8 @@ import { chromeKV } from '../background/kv';
 import { renderPopup } from './popup';
 
 const root = document.getElementById('app');
+// Held while the popup is open, so the background re-checks the visit's stage when it closes.
+try { chrome.runtime.connect({ name: 'pockets-popup' }); } catch { /* the background reconnects on its own events */ }
 if (root) {
   void (async () => {
     let currentUrl: string | null = null;

@@ -1,4 +1,5 @@
 import type { Pt } from './chain';
+import { TEMPO } from './tempo';
 
 export interface Steer {
   heading: number;
@@ -70,14 +71,17 @@ export function stepSteer(
     if (s.rest) {
       s.burst -= dt;
       if (s.burst <= 0 && d > 70) {
-        s.pause = 0.22 + rand() * 0.45;
-        s.burst = 0.55 + rand() * 0.75;
-        s.lookTarget = (rand() - 0.5) * 1.7;
+        // Wider than the mock's 0.22-0.67 s pauses and 0.55-1.3 s bursts, with the same mean, so the rhythm
+        // changes visit to visit without eating into the steering timeout. Both shrink with the tempo.
+        const r = rand();
+        s.pause = (r < 0.15 ? 0.12 + rand() * 0.1 : r > 0.88 ? 0.7 + rand() * 0.25 : 0.25 + rand() * 0.4) / TEMPO;
+        s.burst = (0.4 + rand() * 1.05) / TEMPO;
+        s.lookTarget = (rand() - 0.5) * 1.9;
       }
     }
   }
 
-  s.speed += (want - s.speed) * Math.min(1, dt * (want > s.speed ? 7 : 11));
+  s.speed += (want - s.speed) * Math.min(1, dt * (want > s.speed ? 7 : 11) * TEMPO);
   if (want === 0 && s.speed < 1) s.speed = 0;
 
   const delta = wrap(Math.atan2(dy, dx) - s.heading);

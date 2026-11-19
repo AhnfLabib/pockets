@@ -1,0 +1,3 @@
+# Store images
+
+`shots.mjs` makes the Chrome Web Store images in `docs/store/` (four 1280x800 screenshots and the 440x280 promo tile). It drives the real character page and the real popup with Playwright, so run `npm run build` first, then `node tools/store/shots.mjs` from the repository root; it takes about two minutes because it plays the visit several times and waits on the page's event log. Timing of the climb and getaway frames can be tuned with the `CLIMB_MS` and `GETAWAY_MS` environment variables, and every output should be looked at after a run. The popup shot uses `tools/store/popup.html` as its frame, with `window.chrome` stubbed inside the script, and all outputs are flattened to opaque RGB at the end.

@@ -385,7 +385,7 @@ test('4. stage draws under strict CSP', async ({ context, worker, server }) => {
       `on screen ${'pixel' in onScreen ? JSON.stringify(onScreen.pixel) : `not captured (${onScreen.error})`}. ` +
       `<style> in shadow root applied: ${r.styleElementApplied}; constructed sheet applied: ${r.constructedSheetApplied}; ` +
       `data: image drawn: ${'dataImagePixel' in r ? JSON.stringify(r.dataImagePixel) : `no (${r.dataImageError})`}. ` +
-      'Sprite loading from extension files was not tested (needs web_accessible_resources, not in the manifest yet).',
+      'The stage gets its sprites as data: URLs from the background (no web_accessible_resources), the path checked here.',
   );
 });
 

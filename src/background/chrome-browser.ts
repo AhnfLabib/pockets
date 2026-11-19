@@ -147,4 +147,135 @@ export const chromeBrowser: Browser = {
       /* nothing more to do; the entry stays in history */
     }
   },
+
+  async browserFocused() {
+    try {
+      // Every window type: the default filter is only normal and popup, which would read an undocked DevTools window or
+      // an installed web app's window as "away from the browser".
+      // The popup query first, so the window-focus query is the last await (it sits last before removeTab).
+      if ((await popupWindows()).length > 0) return true;
+      return (await chrome.windows.getAll({ windowTypes: ALL_WINDOW_TYPES })).some((w) => w.focused);
+    } catch {
+      return true; // cannot tell: count as focused, which never allows an away take
+    }
+  },
+
+  async popupWindowIds() {
+    try {
+      return await popupWindows();
+    } catch {
+      return [];
+    }
+  },
+
+  async notificationIds() {
+    try {
+      return Object.keys((await chrome.notifications?.getAll()) ?? {});
+    } catch {
+      return [];
+    }
+  },
+
+  async windowMinimized(windowId) {
+    try {
+      return (await chrome.windows.get(windowId)).state === 'minimized';
+    } catch {
+      return false;
+    }
+  },
+
+  async tabCountInWindow(windowId) {
+    try {
+      return (await chrome.tabs.query({ windowId })).length;
+    } catch {
+      return 0;
+    }
+  },
+
+  /** True only when the notification was created. A missing or denied permission, or any error, is false. */
+  async createNotification(id, n) {
+    try {
+      if (!chrome.notifications) return false;
+      if ((await chrome.notifications.getPermissionLevel()) !== 'granted') return false;
+      const created = await chrome.notifications.create(id, {
+        type: 'basic', iconUrl: chrome.runtime.getURL('assets/icons/icon-128.png'), title: n.title, message: n.message,
+        requireInteraction: true, // stays until the user answers it; never fades away on its own
+        ...(n.buttons ? { buttons: n.buttons.map((title) => ({ title })) } : {}),
+      });
+      return created === id;
+    } catch {
+      return false;
+    }
+  },
+
+  async clearNotification(id) {
+    try {
+      await chrome.notifications?.clear(id);
+    } catch {
+      /* already gone */
+    }
+  },
+
+  async focusTab(tabId) {
+    try {
+      const t = await chrome.tabs.get(tabId);
+      await chrome.windows.update(t.windowId, { focused: true });
+      await chrome.tabs.update(tabId, { active: true });
+    } catch {
+      /* the tab or window is gone */
+    }
+  },
+
+  async setAlarm(name, when) {
+    try {
+      await chrome.alarms.create(name, { when });
+    } catch {
+      /* the minute tick still checks the deadline */
+    }
+  },
+
+  async clearAlarm(name) {
+    try {
+      await chrome.alarms.clear(name);
+    } catch {
+      /* nothing to clear */
+    }
+  },
+
+  async setBadge(text, color) {
+    try {
+      await chrome.action.setBadgeText({ text });
+      if (text) await chrome.action.setBadgeBackgroundColor({ color });
+    } catch {
+      /* cosmetic */
+    }
+  },
+
+  bootId() {
+    boot ??= (async () => {
+      try {
+        const got = (await chrome.storage.session.get(BOOT_KEY))[BOOT_KEY];
+        if (typeof got === 'string' && got) return got;
+        const id = crypto.randomUUID();
+        await chrome.storage.session.set({ [BOOT_KEY]: id });
+        return id;
+      } catch {
+        // Unknown run: a fresh id per worker, so a paused visit from an earlier worker is abandoned, never taken.
+        return 'unknown-' + crypto.randomUUID();
+      }
+    })();
+    return boot;
+  },
 };
+
+/** The windows in which Pockets' own toolbar popup is open. Throws if the API is missing (callers decide). */
+async function popupWindows(): Promise<number[]> {
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['POPUP' as chrome.runtime.ContextType] });
+  return contexts.map((c) => c.windowId);
+}
+
+const ALL_WINDOW_TYPES: chrome.windows.WindowType[] = ['normal', 'popup', 'panel', 'app', 'devtools'] as chrome.windows.WindowType[];
+
+/** chrome.storage.session lives as long as the browser run (cleared on a browser restart or extension reload). */
+const BOOT_KEY = 'pocketsBootId';
+let boot: Promise<string> | null = null;

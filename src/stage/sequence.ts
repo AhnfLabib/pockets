@@ -1,11 +1,17 @@
 // The choreography of one visit, free of the DOM: it moves a Rig, drives a CardView and emits VisitEvents.
 // Timings and paths follow the approved mock (docs/spikes/mock-hand-drawn.html, go.onclick).
 import type { Pt } from './rig/chain';
+import { QUIRK_KINDS, type Quirk, type QuirkKind } from './rig/rig';
+import { TEMPO } from './rig/tempo';
+import { QUOTE_MS, quotePool } from './quotes';
+import { cleanTitle } from '../shared/title';
 import type { VisitEvent, VisitPlan } from '../shared/types';
+
+export { TEMPO };
 
 /** The parts of Rig the sequence drives (Rig itself satisfies this). */
 export interface RigLike {
-  travel(path: Pt[], speed: number, opts?: { rest?: boolean }): Promise<boolean>;
+  travel(path: Pt[], speed: number, opts?: { rest?: boolean; quirks?: Quirk[] }): Promise<boolean>;
   setLook(on: boolean): void;
   setReach(on: boolean): void;
   setStretch(target: number): void;
@@ -41,6 +47,10 @@ export interface SequenceDeps {
   setCarry(carry: Carry | null): void;
   /** Hide Pockets (reduced motion has no walk-off). Optional. */
   setVisible?(on: boolean): void;
+  /** Show a speech bubble by Pockets' head (null hides it). Optional. */
+  say?(text: string | null): void;
+  /** The last known pointer position on the page (viewport px), or null. Optional. */
+  pointer?(): Pt | null;
 }
 
 /** Card geometry shared with card.ts. */
@@ -48,19 +58,29 @@ export const CARD_WIDTH = 250;
 export const CARD_TOP = 70;
 export const CARD_MARGIN = 12;
 
-// Speeds (px/s) and timings (ms) from the mock.
-const PEEK_SPEED = 60;
-const LOOK_MS = 1200;
-const CLIMB_SPEED = 165;
+/** Speeds (px/s) from the approved mock, before the tempo. */
+export const BASE_SPEED = { peek: 60, climb: 165, leave: 150, bolt: 400 } as const;
+/** The speeds the choreography uses: the mock's, TEMPO times faster. Climb covers the crossing too. */
+export const SPEED = {
+  peek: BASE_SPEED.peek * TEMPO, climb: BASE_SPEED.climb * TEMPO, leave: BASE_SPEED.leave * TEMPO, bolt: BASE_SPEED.bolt * TEMPO,
+} as const;
+// Choreographed pauses (ms) from the mock, shortened by the tempo.
+const LOOK_MS = 1200 / TEMPO;
+const DROP_MS = 380 / TEMPO;
+const CROUCH_MS = 300 / TEMPO;
+const KEPT_MS = 1500 / TEMPO;
+/** Reduced motion keeps the mock's hold (it has no movement to speed up). */
+const REDUCED_HOLD_MS = 1500;
 const CLIMB_JITTER = 7;
-const LEAVE_SPEED = 150;
-const BOLT_SPEED = 400;
-const DROP_MS = 380;
 const CROUCH = 0.74;
-const CROUCH_MS = 300;
 const SPRING = 1.12;
-const KEPT_MS = 1500;
 const BORDER_X = 30;
+/** A generous estimate of the card's height, for keeping exit routes clear of it. */
+const CARD_HEIGHT_EST = 150;
+/** How far the exit routes keep from the card's edges (Pockets is about 28 px wide). */
+const CARD_CLEARANCE = 26;
+/** How far off the page an exit ends, so the tail is gone too. */
+const OFF = 130;
 /** How often the stage says it is still playing, from play until card-shown. MV3 stops a service worker that has
  *  heard nothing for about 30 s, and a long climb on a big screen sends no other event. */
 export const ALIVE_MS = 10_000;
@@ -92,6 +112,148 @@ export function cardPosition(tx: number, width: number, reduced: boolean): { lef
   return { left: Math.max(CARD_MARGIN, Math.min(width - CARD_MARGIN - w, left)), top: CARD_TOP };
 }
 
+export type Entrance = 'bottom-left' | 'bottom-right' | 'left' | 'right';
+export type Exit = 'bottom' | 'left' | 'right' | 'bottom-left' | 'bottom-right';
+export const ENTRANCES: readonly Entrance[] = ['bottom-left', 'bottom-right', 'left', 'right'];
+export const EXITS: readonly Exit[] = ['bottom', 'left', 'right', 'bottom-left', 'bottom-right'];
+
+/** A quirk as planned: on the climb or the crossing, `frac` of the way along it (tiptoe: always at the crossing's end). */
+export interface PlannedQuirk { kind: QuirkKind; leg: 'climb' | 'cross'; frac: number; side: number }
+
+/** Everything random about one visit's movement, drawn before it starts so a seed always gives the same visit. */
+export interface Choreography {
+  entrance: Entrance;
+  /** For edge entrances: where on the edge, as a fraction of the viewport height (lower half). */
+  edgeY: number;
+  exit: Exit;
+  /** Where along the exit edge (0..1), for bottom and side exits. */
+  exitT: number;
+  quirks: PlannedQuirk[];
+  quote: string | null;
+}
+
+const pick = <T>(rand: () => number, list: readonly T[]): T => list[Math.min(list.length - 1, Math.floor(rand() * list.length))];
+
+/**
+ * Draw one visit's entrance, exit, quirks (0-2) and quote (about half of visits) from `rand`, in a fixed order.
+ * Reduced motion and resumed visits get no quirks and no quote. The plan never depends on the pointer: the rig skips
+ * lookAtPointer when it comes due with no pointer position known.
+ */
+export function planChoreography(
+  rand: () => number,
+  opts: { reduced: boolean; resume?: boolean; reason: 'stale' | 'distracting' },
+): Choreography {
+  const entrance = pick(rand, ENTRANCES);
+  const edgeY = 0.55 + rand() * 0.33;
+  const exit = pick(rand, EXITS);
+  const exitT = rand();
+  const quirks: PlannedQuirk[] = [];
+  let quote: string | null = null;
+  if (!opts.reduced && !opts.resume) {
+    const r = rand();
+    const n = r < 0.3 ? 0 : r < 0.75 ? 1 : 2;
+    const pool = QUIRK_KINDS;
+    for (let i = 0; i < n; i++) {
+      const left = pool.filter((k) => !quirks.some((q) => q.kind === k));
+      const kind = pick(rand, left);
+      const leg: 'climb' | 'cross' = kind === 'tiptoe' ? 'cross' : rand() < 0.55 ? 'climb' : 'cross';
+      quirks.push({ kind, leg, frac: 0, side: rand() < 0.5 ? -1 : 1 });
+    }
+    // Spread quirks on the same leg apart: the first in its first half, the second in its second.
+    for (const leg of ['climb', 'cross'] as const) {
+      const on = quirks.filter((q) => q.leg === leg && q.kind !== 'tiptoe');
+      on.forEach((q, i) => { q.frac = on.length === 1 ? 0.2 + rand() * 0.55 : i === 0 ? 0.15 + rand() * 0.25 : 0.55 + rand() * 0.25; });
+    }
+    if (rand() < 0.5) quote = pick(rand, quotePool(opts.reason));
+  }
+  return { entrance, edgeY, exit, exitT, quirks, quote };
+}
+
+const clampTo = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(Math.max(lo, hi), v));
+const pathLength = (from: Pt, path: Pt[]): number => {
+  let len = 0;
+  let prev = from;
+  for (const p of path) { len += Math.hypot(p.x - prev.x, p.y - prev.y); prev = p; }
+  return len;
+};
+
+/** Where Pockets starts, where his head pokes in, which border he climbs and the climb waypoints. */
+export function entranceRoute(
+  c: Choreography, view: { width: number; height: number }, rand: () => number,
+): { start: Pt; heading: number; peek: Pt; side: 'left' | 'right'; climb: Pt[] } {
+  const W = view.width;
+  const H = view.height;
+  const side: 'left' | 'right' = c.entrance === 'bottom-left' || c.entrance === 'left' ? 'left' : 'right';
+  const bx = side === 'left' ? BORDER_X : W - BORDER_X;
+  const jx = (): number => bx + (rand() * 2 - 1) * CLIMB_JITTER;
+  const top = { x: side === 'left' ? 32 : W - 32, y: 64 };
+  if (c.entrance === 'bottom-left' || c.entrance === 'bottom-right') {
+    return {
+      start: { x: bx, y: H + 36 }, heading: -Math.PI / 2, peek: { x: bx, y: H - 6 }, side,
+      climb: [{ x: jx(), y: H * 0.72 }, { x: jx(), y: H * 0.48 }, { x: jx(), y: H * 0.27 }, top],
+    };
+  }
+  const y0 = clampTo(H * c.edgeY, Math.min(H - 40, 110), H - 40);
+  const climb = [0.3, 0.6, 0.82].map((f) => y0 + (64 - y0) * f).filter((y) => y > 64 + 20 && y < y0 - 20).map((y) => ({ x: jx(), y }));
+  climb.push(top);
+  return side === 'left'
+    ? { start: { x: -36, y: y0 }, heading: 0, peek: { x: 6, y: y0 }, side, climb }
+    : { start: { x: W + 36, y: y0 }, heading: Math.PI, peek: { x: W - 6, y: y0 }, side, climb };
+}
+
+/** Along the top from the border he climbed to under the tab, turning up to it. */
+export function crossRoute(side: 'left' | 'right', tx: number, view: { width: number }, rand: () => number): Pt[] {
+  const W = view.width;
+  const x = (v: number): number => clampTo(v, BORDER_X, W - BORDER_X);
+  const d = side === 'left' ? 1 : -1;
+  const from = side === 'left' ? 62 : W - 62;
+  return [
+    { x: from, y: 54 }, { x: x((from + tx) / 2), y: 70 + (rand() - 0.5) * 12 }, { x: x(tx - d * 32), y: 66 }, { x: x(tx - d * 5), y: 50 }, { x: tx, y: 24 },
+  ];
+}
+
+/** The card's keep-out box for exit routes. */
+export function cardKeepOut(at: { left: number; top: number }, width: number): { l: number; t: number; r: number; b: number } {
+  const w = Math.min(CARD_WIDTH, width - 2 * CARD_MARGIN);
+  return { l: at.left - CARD_CLEARANCE, t: at.top - CARD_CLEARANCE, r: at.left + w + CARD_CLEARANCE, b: at.top + CARD_HEIGHT_EST + CARD_CLEARANCE };
+}
+
+/** From under the tab off the page through the planned edge: first down on the side away from the card, then below
+ *  it, then out. Every waypoint but the last is inside the viewport. */
+export function exitRoute(
+  c: Choreography, tx: number, at: { left: number; top: number }, view: { width: number; height: number },
+): Pt[] {
+  const W = view.width;
+  const H = view.height;
+  const k = cardKeepOut(at, W);
+  const cardRight = at.left > tx;
+  const away = cardRight ? -1 : 1;
+  const x1 = cardRight ? Math.min(tx - 6, k.l - 12) : Math.max(tx + 6, k.r + 12);
+  const inX = (v: number): number => clampTo(v, BORDER_X, W - BORDER_X);
+  const inY = (v: number): number => clampTo(v, 24, H - 30);
+  const p1 = { x: inX(x1 + away * 14), y: inY(90) };
+  const p2 = { x: inX(x1 + away * 26), y: inY(k.b + 24) };
+  const lowY = clampTo(k.b + 40 + c.exitT * (H - 40 - (k.b + 40)), p2.y, H - 30);
+  let end: Pt;
+  switch (c.exit) {
+    case 'bottom': end = { x: clampTo(p2.x + (c.exitT - 0.5) * W * 0.6, 40, W - 40), y: H + OFF }; break;
+    case 'bottom-left': end = { x: -OFF, y: H + OFF }; break;
+    case 'bottom-right': end = { x: W + OFF, y: H + OFF }; break;
+    case 'left': end = { x: -OFF, y: lowY }; break;
+    case 'right': end = { x: W + OFF, y: lowY }; break;
+  }
+  return [p1, p2, end];
+}
+
+/** The planned quirks for one leg, as the rig takes them. */
+function legQuirks(c: Choreography, leg: 'climb' | 'cross', from: Pt, path: Pt[], pointer?: () => Pt | null): Quirk[] {
+  const len = pathLength(from, path);
+  return c.quirks.filter((q) => q.leg === leg).map((q) => ({
+    kind: q.kind, side: q.side, at: q.kind === 'tiptoe' ? Math.min(80, len * 0.4) : q.frac * len,
+    ...(q.kind === 'lookAtPointer' ? { lookAt: pointer ?? (() => null) } : {}),
+  }));
+}
+
 /**
  * Play one visit. Resolves after `done`, or as soon as `deps.signal` aborts (then nothing more is emitted).
  * Events: card-shown (only once the card is on screen), tick N … tick 1 a second apart, then either keep
@@ -100,6 +262,8 @@ export function cardPosition(tx: number, width: number, reduced: boolean): { lef
  * the visit ends there, with no done; the same happens if the card has not come on screen within ten seconds of
  * the countdown phase starting. From play until card-shown (or hidden), alive is emitted every ten seconds so the
  * background's service worker is not stopped mid-climb; it stops on card-shown, on abort and when the visit ends.
+ * With plan.resume (the background replays a paused visit), there is no climb: the countdown starts again from the full
+ * length and card-shown is reported again once the card is on screen.
  */
 export async function runVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: SequenceDeps): Promise<void> {
   const { signal } = deps;
@@ -167,7 +331,19 @@ async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: S
   const tx = estimateTabX(plan.tabIndex, plan.tabCount, W);
   const at = cardPosition(tx, W, deps.reduced);
   const total = Math.max(1, Math.round(plan.countdownSeconds));
-  const text = { title: `Mine in ${total}…`, sub: `${plan.title} · ${plan.reasonText}` };
+  const title = cleanTitle(plan.title);
+  const text = { title: `Mine in ${total}…`, sub: `${title} · ${plan.reasonText}` };
+  // Every random choice for the movement is drawn here, before any frame runs, so a seed always gives the same visit.
+  const chor = planChoreography(rand, { reduced: deps.reduced, resume: !!plan.resume, reason: plan.reason });
+  const route = entranceRoute(chor, view, rand);
+  const cross = crossRoute(route.side, tx, view, rand);
+  let quoteTimer: ReturnType<typeof setTimeout> | undefined;
+  const hush = (): void => {
+    clearTimeout(quoteTimer);
+    quoteTimer = undefined;
+    deps.say?.(null);
+  };
+  signal.addEventListener('abort', hush, { once: true });
 
   if (deps.reduced) {
     // No crawl: Pockets sits still beside the card, facing up.
@@ -180,11 +356,11 @@ async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: S
     const outcome = await countdown(rig);
     if (outcome === 'cancelled') return;
     if (outcome === 'keep') {
-      if (!(await wait(KEPT_MS))) return;
+      if (!(await wait(REDUCED_HOLD_MS))) return;
       card.hide();
     } else {
       deps.setCarry({ phase: 'held' });
-      if (!(await wait(KEPT_MS))) return;
+      if (!(await wait(REDUCED_HOLD_MS))) return;
     }
     deps.setVisible?.(false);
     deps.setCarry(null);
@@ -192,47 +368,53 @@ async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: S
     return;
   }
 
-  const rig = deps.createRig({ x: BORDER_X, y: H + 36 }, -Math.PI / 2);
+  // A resumed visit (the user came back after a pause) skips the climb: Pockets is already under the tab, reaching up.
+  const rig = deps.createRig(plan.resume ? { x: tx, y: 24 } : route.start, plan.resume ? -Math.PI / 2 : route.heading);
   deps.setVisible?.(true);
   // One travel() per leg, as in the mock. The rig's steering timeout scales with the path, so a long leg
-  // on a big screen is not cut short.
-  const go = async (path: Pt[], speed: number, rest?: boolean): Promise<boolean> => {
+  // on a big screen is not cut short; quirks ride along on the climb and crossing legs.
+  const go = async (path: Pt[], speed: number, rest?: boolean, quirks?: Quirk[]): Promise<boolean> => {
     if (!live()) return false;
-    const arrived = await orAbort(rig.travel(path, speed, rest === undefined ? undefined : { rest }), false);
+    const opts = rest === undefined && !quirks?.length ? undefined : { ...(rest === undefined ? {} : { rest }), ...(quirks?.length ? { quirks } : {}) };
+    const arrived = await orAbort(rig.travel(path, speed, opts), false);
     return arrived && live();
   };
-  const jx = (): number => BORDER_X + (rand() * 2 - 1) * CLIMB_JITTER;
 
-  // Peek in at the bottom and look around.
-  if (!(await go([{ x: BORDER_X, y: H - 6 }], PEEK_SPEED, false))) return;
-  rig.setLook(true);
-  if (!(await wait(LOOK_MS))) return;
-  rig.setLook(false);
+  if (!plan.resume) {
+    // Poke the head in from the chosen edge, maybe say something, and look around.
+    if (!(await go([route.peek], SPEED.peek, false))) return;
+    if (chor.quote && deps.say) {
+      deps.say(chor.quote);
+      quoteTimer = setTimeout(hush, QUOTE_MS);
+    }
+    rig.setLook(true);
+    if (!(await wait(LOOK_MS))) return;
+    rig.setLook(false);
 
-  // Climb the left border, then cross the top to under the target tab and turn up to it.
-  if (!(await go([{ x: jx(), y: H * 0.72 }, { x: jx(), y: H * 0.48 }, { x: jx(), y: H * 0.27 }, { x: 32, y: 64 }], CLIMB_SPEED))) return;
-  const cross = [
-    { x: 62, y: 54 }, { x: (62 + tx) / 2, y: 70 + (rand() - 0.5) * 12 }, { x: tx - 32, y: 66 }, { x: tx - 5, y: 50 }, { x: tx, y: 24 },
-  ];
-  if (!(await go(cross, CLIMB_SPEED))) return;
+    // Climb the nearer border, then cross the top to under the target tab and turn up to it.
+    if (!(await go(route.climb, SPEED.climb, undefined, legQuirks(chor, 'climb', route.peek, route.climb, deps.pointer)))) return;
+    if (!(await go(cross, SPEED.climb, undefined, legQuirks(chor, 'cross', route.climb[route.climb.length - 1], cross, deps.pointer)))) return;
+  }
+  hush();
   rig.setReach(true);
 
   const outcome = await countdown(rig);
   if (outcome === 'cancelled') return;
 
+  const exit = exitRoute(chor, tx, at, view);
   if (outcome === 'keep') {
     if (!(await wait(KEPT_MS))) return;
     card.hide();
-    if (!(await go([{ x: tx + 34, y: 76 }, { x: tx + 6, y: 150 }, { x: Math.max(50, tx - 80), y: H + 110 }], LEAVE_SPEED))) return;
+    if (!(await go(exit, SPEED.leave))) return;
   } else {
-    // The tab drops off the bar into Pockets' mouth; it crouches, springs and bolts off the bottom.
+    // The tab drops off the bar into Pockets' mouth; it crouches, springs and bolts off through the chosen edge.
     deps.setCarry({ phase: 'drop', from: { x: tx, y: -12 }, ms: DROP_MS });
     if (!(await wait(DROP_MS))) return;
     deps.setCarry({ phase: 'held' });
     rig.setStretch(CROUCH);
     if (!(await wait(CROUCH_MS))) return;
     rig.setStretch(SPRING);
-    if (!(await go([{ x: tx + 52, y: 84 }, { x: tx + 26, y: 160 }, { x: Math.max(50, tx - 90), y: H + 130 }], BOLT_SPEED))) return;
+    if (!(await go(exit, SPEED.bolt))) return;
     rig.setStretch(1);
   }
   deps.setCarry(null);
@@ -272,7 +454,7 @@ async function playVisit(plan: VisitPlan, emit: (e: VisitEvent) => void, deps: S
     if (!live()) return 'cancelled';
     if (keepPressed) {
       out({ type: 'keep' });
-      card.kept('Fine. Keep it.', `Pockets will leave ${plan.title} alone for now.`);
+      card.kept('Fine. Keep it.', `Pockets will leave ${title} alone for now.`);
       return 'keep';
     }
     // The take needs the card to be visible now, not only when it first showed.

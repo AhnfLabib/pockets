@@ -1,15 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Pockets",
-  "version": "0.1.0",
-  "description": "A small character who takes your stale tabs.",
+  "name": "Pockets: the tab-stealing raccoon",
+  "short_name": "Pockets",
+  "version": "1.0.0",
+  "description": "A hand-drawn raccoon who takes the tabs you forgot about. Warns you first, lets you keep them, and gives them back if you ask.",
+  "minimum_chrome_version": "116",
   "permissions": [
     "tabs",
     "storage",
     "alarms",
     "idle",
     "sessions",
-    "scripting"
+    "scripting",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -27,22 +30,22 @@
         "<all_urls>"
       ],
       "js": [
+        "content-start.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
         "content.js"
       ],
       "run_at": "document_idle",
       "all_frames": true,
       "match_about_blank": true
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "assets/sprites/*",
-        "assets/icons/*"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
     }
   ],
   "action": {

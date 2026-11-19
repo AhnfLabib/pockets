@@ -1,10 +1,10 @@
 // The character page: plays one visit with the real stage on a mock browser, for the owner to judge.
 // Built by scripts/build.mjs into dist-harness/, which embeds the sprite sheets as __POCKETS_SPRITES__.
 import { mountStage, type Stage } from '../src/stage/mount';
-import type { SpriteMeta, Sprites } from '../src/stage/render';
+import { loadSprites, type SpriteData } from '../src/stage/render';
 import type { VisitEvent, VisitPlan } from '../src/shared/types';
 
-declare const __POCKETS_SPRITES__: { meta: SpriteMeta; sheets: string[] };
+declare const __POCKETS_SPRITES__: SpriteData;
 
 const ASSETS = '../assets/';
 const TABS: { title: string; color: string; active?: boolean }[] = [
@@ -31,8 +31,26 @@ u{display:block;height:10px;border-radius:5px;background:var(--ghost);text-decor
 const faviconFor = (color: string): string =>
   'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" rx="3" fill="${color}"/></svg>`);
 
+/** mulberry32: a small seeded generator, so a visit can be replayed from its seed. */
+function mulberry(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
+  };
+}
+/** The stage's rand reads through this, so each Play can start a fresh seed. */
+let current = mulberry(1);
+
 /** What the character page exposes for its e2e test. */
 interface HarnessState {
+  /** The seed of the visit playing (or last played). */
+  seed: number;
+  /** Set to pin the next Play's seed (tests, screenshots); otherwise each Play picks a fresh one. */
+  nextSeed: number | null;
   ready: boolean;
   events: string[];
   root: ShadowRoot | null;
@@ -41,7 +59,7 @@ interface HarnessState {
   cardAtShown: { left: number; top: number; width: number; height: number } | null;
   runs: number;
 }
-const state: HarnessState = { ready: false, events: [], root: null, stage: null, cardAtShown: null, runs: 0 };
+const state: HarnessState = { seed: 0, nextSeed: null, ready: false, events: [], root: null, stage: null, cardAtShown: null, runs: 0 };
 (window as unknown as { __pockets: HarnessState }).__pockets = state;
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -82,26 +100,17 @@ function markTarget(remaining: number): void {
   t.querySelector('span')!.textContent = `Mine in ${remaining}…`;
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.onerror = () => rej(new Error('could not load a sprite sheet'));
-    img.src = src;
-  });
-}
-
 async function start(): Promise<void> {
   buildTabs();
   const loaded = new Promise<void>((res) => frame.addEventListener('load', () => res(), { once: true }));
   frame.srcdoc = PAGE_DOC;
   await loaded;
-  const sprites: Sprites = {
-    meta: __POCKETS_SPRITES__.meta,
-    sheets: await Promise.all(__POCKETS_SPRITES__.sheets.map(loadImage)),
-  };
-  const stage = await mountStage(frame.contentDocument!, ASSETS, {
+  // The same decoding path the content script uses for the sprites the background serves.
+  const sprites = await loadSprites(__POCKETS_SPRITES__);
+  const stage = await mountStage(frame.contentDocument!, {
     sprites,
+    rand: () => current(),
+    iconUrl: ASSETS + 'icons/icon-32.png',
     exposeRoot: (root) => { state.root = root; },
   });
   state.stage = stage;
@@ -121,8 +130,11 @@ async function run(pressKeep: boolean): Promise<void> {
   state.events = [];
   state.cardAtShown = null;
   state.runs++;
-  log.textContent = '';
-  status.textContent = 'Pockets pokes its head in at the bottom, looks around and climbs the left border.';
+  state.seed = state.nextSeed ?? crypto.getRandomValues(new Uint32Array(1))[0];
+  state.nextSeed = null;
+  current = mulberry(state.seed);
+  log.textContent = `seed ${state.seed}`;
+  status.textContent = 'Pockets pokes his head in from an edge, looks around and climbs the nearer border.';
   const plan: VisitPlan = {
     visitId: `harness-${state.runs}`, targetTabId: TARGET, title: TABS[TARGET].title, faviconUrl: faviconFor(TABS[TARGET].color), reason: 'stale',
     reasonText: 'not opened for 2 days', tabIndex: TARGET, tabCount: TABS.length, countdownSeconds: 5, targetIsStage: false,
@@ -130,7 +142,7 @@ async function run(pressKeep: boolean): Promise<void> {
   const emit = (e: VisitEvent): void => {
     const name = e.type === 'tick' ? `tick ${e.remaining}` : e.type;
     state.events.push(name);
-    log.textContent = state.events.join(' · ');
+    log.textContent = `seed ${state.seed} · ${state.events.join(' · ')}`;
     const target = document.getElementById('target');
     switch (e.type) {
       case 'card-shown': {
@@ -153,7 +165,7 @@ async function run(pressKeep: boolean): Promise<void> {
         target?.classList.add('gone');
         setTimeout(() => target?.remove(), 300);
         stage.showNotice(TABS[TARGET].title, emit);
-        status.textContent = 'The tab drops off the bar. Pockets grabs it and bolts.';
+        status.textContent = 'The tab drops off the bar. Pockets grabs it and bolts off the page.';
         break;
       case 'undo':
         buildTabs();

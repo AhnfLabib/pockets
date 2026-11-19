@@ -3,10 +3,11 @@
 // with `all: initial` plus important inline styles so page rules cannot hide or move it.
 import { Rig } from './rig/rig';
 import type { Pt } from './rig/chain';
-import { drawPose, loadSprites, type Sprites } from './render';
-import { Card, Notice, STAGE_CSS } from './card';
+import { drawPose, type Sprites } from './render';
+import { Bubble, Card, Notice, STAGE_CSS } from './card';
 import { runVisit, type Carry } from './sequence';
 import type { VisitEvent, VisitPlan } from '../shared/types';
+import { cleanTitle } from '../shared/title';
 
 export { estimateTabX } from './sequence';
 
@@ -20,10 +21,12 @@ export interface Stage {
 }
 
 export interface StageOptions {
-  /** Randomness for the rig and the path jitter. Defaults to Math.random. */
+  /** Randomness for the rig and every per-visit choice (entrance, exit, quirks, quote). Defaults to Math.random. */
   rand?: () => number;
-  /** Sprites already loaded. Without it they are loaded from `assetBase + 'sprites/'`. */
-  sprites?: Sprites;
+  /** Decoded sprites (render.ts loadSprites). The stage never loads anything from the extension package itself. */
+  sprites: Sprites;
+  /** The notice's icon, a data: URL (or, on the character page, a file next to it). */
+  iconUrl: string;
   /** Hands over the closed shadow root. For the character page and its e2e test only. */
   exposeRoot?: (root: ShadowRoot) => void;
 }
@@ -152,15 +155,12 @@ function drawFallingTab(ctx: CanvasRenderingContext2D, at: Pt, angle: number, ti
   ctx.restore();
 }
 
-/**
- * Mount the stage on `host` (the page's document). `assetBase` ends in '/' and holds sprites/ and icons/.
- * Resolves once the sprites are loaded.
- */
-export async function mountStage(host: Document, assetBase: string, opts: StageOptions = {}): Promise<Stage> {
+/** Mount the stage on `host` (the page's document), with sprites and the notice icon already in hand. */
+export async function mountStage(host: Document, opts: StageOptions): Promise<Stage> {
   const win = host.defaultView;
   if (!win) throw new Error('Pockets: the stage needs a document with a window');
   const rand = opts.rand ?? Math.random;
-  const sprites = opts.sprites ?? (await loadSprites(assetBase + 'sprites/'));
+  const sprites = opts.sprites;
 
   const el = host.createElement('pockets-stage');
   for (const [k, v] of Object.entries(HOST_STYLE)) el.style.setProperty(k, v, 'important');
@@ -174,7 +174,8 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
   wrap.appendChild(canvas);
   root.append(style, wrap);
   const card = new Card(host, wrap);
-  const notice = new Notice(host, wrap, assetBase + 'icons/icon-32.png');
+  const notice = new Notice(host, wrap, opts.iconUrl);
+  const bubble = new Bubble(host, wrap);
   (host.documentElement ?? host.body).appendChild(el);
   opts.exposeRoot?.(root);
 
@@ -193,6 +194,29 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
   };
   size();
   win.addEventListener('resize', size);
+
+  // Where the pointer last was on this page, for Pockets to glance at. Kept in memory only; forgotten when it leaves.
+  let pointer: Pt | null = null;
+  const onMove = (e: PointerEvent): void => { pointer = { x: e.clientX, y: e.clientY }; };
+  const onOut = (e: PointerEvent): void => { if (!e.relatedTarget) pointer = null; };
+  const onBlur = (): void => { pointer = null; };
+  // Listening only while a visit is playing (never in reduced motion): the position is used only in the moment.
+  let listening = false;
+  const attachPointer = (): void => {
+    if (listening) return;
+    listening = true;
+    win.addEventListener('pointermove', onMove, { capture: true, passive: true });
+    win.addEventListener('pointerout', onOut, { capture: true, passive: true });
+    win.addEventListener('blur', onBlur);
+  };
+  const detachPointer = (): void => {
+    pointer = null;
+    if (!listening) return;
+    listening = false;
+    win.removeEventListener('pointermove', onMove, { capture: true });
+    win.removeEventListener('pointerout', onOut, { capture: true });
+    win.removeEventListener('blur', onBlur);
+  };
 
   // One visit at a time.
   let rig: Rig | null = null;
@@ -220,6 +244,7 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
       const pose = rig.pose();
       const held = carry?.phase === 'held' ? { title, faviconColor: color } : undefined;
       drawPose(ctx, pose, sprites, t, held);
+      bubble.place(pose.nodes[0], W, H);
       if (carry?.phase === 'drop') {
         const k = Math.min(1, (ts - carry.at) / carry.ms);
         const e = k * k;
@@ -250,7 +275,9 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
     rig = null;
     visible = false;
     carry = null;
+    detachPointer();
     card.hideNow();
+    bubble.hide();
     stopLoop();
   };
 
@@ -261,8 +288,9 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
       const ac = new AbortController();
       abort = ac;
       reduced = win.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      title = plan.title;
-      color = faviconColorFor(plan.title);
+      if (!reduced) attachPointer();
+      title = cleanTitle(plan.title);
+      color = faviconColorFor(title);
       void readFaviconColor(win, plan.faviconUrl).then((c) => {
         if (c && abort === ac) color = c;
       });
@@ -285,6 +313,11 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
           setVisible: (on) => {
             visible = on;
           },
+          say: (text) => {
+            if (abort === ac && !reduced) bubble.say(text);
+            else bubble.hide();
+          },
+          pointer: () => pointer,
         });
       } finally {
         if (abort === ac) {
@@ -292,6 +325,8 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
           rig = null;
           visible = false;
           carry = null;
+          detachPointer();
+          bubble.hide();
           stopLoop();
         }
       }
@@ -305,6 +340,7 @@ export async function mountStage(host: Document, assetBase: string, opts: StageO
       cancel();
       notice.hide();
       win.removeEventListener('resize', size);
+      detachPointer();
       el.remove();
     },
   };

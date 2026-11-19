@@ -13,6 +13,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
 const harnessDist = join(root, 'dist-harness');
 const testBuild = process.env.POCKETS_TEST === '1';
+// Differs on every build, so the content scripts' run-once guard (src/content/guard.ts) tells a reloaded or updated
+// build from the one already running in a page, even when the manifest version is unchanged.
+const buildStamp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 async function exists(path) {
   try {
@@ -31,6 +34,7 @@ await build({
   entryPoints: {
     background: join(root, 'src/background/index.ts'),
     content: join(root, 'src/content/index.ts'),
+    'content-start': join(root, 'src/content/start.ts'),
     options: join(root, 'src/options/main.ts'),
     popup: join(root, 'src/popup/main.ts'),
   },
@@ -42,7 +46,7 @@ await build({
   logLevel: 'info',
   // minifySyntax folds `if (false) { ... }` away, so the test-only hook is not shipped. Names and whitespace are kept.
   minifySyntax: true,
-  define: { __POCKETS_TEST__: JSON.stringify(testBuild) },
+  define: { __POCKETS_TEST__: JSON.stringify(testBuild), __POCKETS_BUILD__: JSON.stringify(buildStamp) },
 });
 if (testBuild) console.log('POCKETS_TEST=1: test build, with the pockets/test-set hook');
 

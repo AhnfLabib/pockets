@@ -31,16 +31,24 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
     const img = new Image();
     img.onload = () => res(img);
-    img.onerror = () => rej(new Error(`Pockets: could not load ${src}`));
+    img.onerror = () => rej(new Error('Pockets: could not decode a sprite sheet'));
     img.src = src;
   });
 }
 
-/** Load sprites.json and the three boiling sheets from the extension's own `baseUrl` (ending in '/'). */
-export async function loadSprites(baseUrl: string): Promise<Sprites> {
-  const meta = (await (await fetch(baseUrl + 'sprites.json')).json()) as SpriteMeta;
-  const sheets = await Promise.all([0, 1, 2].map((i) => loadImage(`${baseUrl}sheet-${i}.png`)));
-  return { sheets, meta };
+/** Sprite metadata and the three boiling sheets as data URLs: what the background serves (`pockets/sprites`) and
+ *  what the character page has inlined at build time. */
+export interface SpriteData { meta: SpriteMeta; sheets: string[] }
+
+/** Decode sprite data into drawable sheets. Only data: URLs are accepted, so the page never loads an extension URL
+ *  (and the extension makes no request). Rejects on malformed data or a sheet that will not decode. */
+export async function loadSprites(data: SpriteData): Promise<Sprites> {
+  const { meta, sheets } = data ?? ({} as SpriteData);
+  if (!meta || typeof meta !== 'object' || !meta.parts || !Array.isArray(sheets) || sheets.length !== 3
+      || !sheets.every((u) => typeof u === 'string' && u.startsWith('data:image/'))) {
+    throw new Error('Pockets: bad sprite data');
+  }
+  return { sheets: await Promise.all(sheets.map(loadImage)), meta };
 }
 
 /** Left and right edges of a strip `halfWidths[i]` either side of each spine point. Left is the -side

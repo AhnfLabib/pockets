@@ -2,6 +2,7 @@
 // It never writes runtime state: the working switch asks the background, which owns those writes.
 import type { Store, TakenTab } from '../background/store';
 import { siteOf } from '../rules/sites';
+import { cleanTitle } from '../shared/title';
 
 export interface PopupDeps {
   store: Store;
@@ -95,11 +96,11 @@ export async function renderPopup(root: HTMLElement, deps: PopupDeps): Promise<v
       const li = el('li', { 'data-taken': String(t.takenAt) });
       const info = el('div', { class: 'info' });
       info.append(
-        el('span', { class: 'title' }, t.title || t.url),
+        el('span', { class: 'title' }, (t.title ? cleanTitle(t.title) : t.url)),
         el('span', { class: 'meta' }, `${siteOf(t.url) ?? t.url} · ${ago(now() - t.takenAt)}`),
       );
       const btn = el('button', { type: 'button' }, 'Reopen');
-      btn.setAttribute('aria-label', `Reopen ${t.title || t.url}`);
+      btn.setAttribute('aria-label', `Reopen ${(t.title ? cleanTitle(t.title) : t.url)}`);
       btn.addEventListener('click', () => {
         btn.disabled = true;
         undo(t.takenAt);
