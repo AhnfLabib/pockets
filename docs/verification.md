@@ -17,8 +17,10 @@ Browser: Playwright 1.63.0's Chromium build (`chromium-1243`, pre-installed at
 | 5 | Discarded tabs: can the icon and title swap work on them? | **fail** | `tabs.discard` on a background tab worked (`discarded: true`, status `unloaded`). The content script ping then failed with "Could not establish connection. Receiving end does not exist." `chrome.scripting.executeScript` **resolved without error**, and the injected function reported running in a live document: `href` `/discard-fresh`, `visibilityState` `"hidden"`, and `document.title` returning the new title. Yet `tabs.get`, read at most 2 s later, reported `discarded: true`, `status: "unloaded"`, the original title, and no icon. Both observations are recorded as seen; this run does not explain them (for example, whether the script woke the tab briefly or ran in some other document). What matters for the design: a resolved `executeScript` did not produce a visible swap on a discarded tab, so code must check `tab.discarded` rather than trust the result. Also observed: a tab swapped while awake and then discarded **keeps the swapped title and icon** on the tab bar. Restoring a tab that gets discarded mid-visit therefore cannot rely on the content script. |
 | 5b | How often stale tabs are asleep in practice | **could not verify** | This depends on real users' memory pressure, Memory Saver settings and browsing habits. A test container cannot measure it. |
 
-Gate (brief): assumptions 1 and 2 passed, so Phase 2 can go ahead as designed. Assumption 5 failed; its test is marked `test.fail()` so the suite stays green and
-alerts if the behaviour changes. That narrows the tab-bar part of a visit (a discarded target cannot show the swapped icon and
+Gate (brief): assumptions 1 and 2 passed, so Phase 2 can go ahead as designed. Assumption 5 failed; its test now asserts
+that recorded outcome (Chromium did not crash, the tab stayed discarded, and its title and icon were **not** swapped), so
+it is green while Chromium behaves as recorded and turns red if the behaviour changes. (It was first marked `test.fail()`
+with the opposite assertions; that was replaced because the list reporter shows an expected failure as a red cross.) That narrows the tab-bar part of a visit (a discarded target cannot show the swapped icon and
 title) but does not block.
 
 ## Environment findings that later tasks need

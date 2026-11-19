@@ -27,8 +27,14 @@ npx vitest run         # unit tests
 npx tsc --noEmit       # type check
 ```
 
-The end-to-end tests drive real Chromium with the extension loaded. They need a test build, which compiles in a
-test-only hook (`pockets/test-set`) that shortens the timings:
+The end-to-end tests drive real Chromium with the extension loaded. On a fresh checkout, download Playwright's
+Chromium once first:
+
+```
+npx playwright install chromium
+```
+
+They need a test build, which compiles in a test-only hook (`pockets/test-set`) that shortens the timings:
 
 ```
 POCKETS_TEST=1 npm run build
