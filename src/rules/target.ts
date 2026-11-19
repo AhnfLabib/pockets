@@ -5,7 +5,12 @@ import { matchesSite } from './sites';
 export function pickTarget(
   tabs: TabInfo[], focusedWindowId: number, s: Settings, rt: RuntimeState, now: number,
 ): { tab: TabInfo; reason: Reason } | null {
-  const candidates = tabs.filter((t) => t.windowId === focusedWindowId && !matchesSite(t.url, s.neverTake));
+  // Never close a window: a tab that is alone in its window is never a target (closing it would close the window,
+  // perhaps the whole browser, and leave nowhere to show Undo). `tabs` is the focused window's tabs.
+  const perWindow = new Map<number, number>();
+  for (const t of tabs) perWindow.set(t.windowId, (perWindow.get(t.windowId) ?? 0) + 1);
+  const candidates = tabs.filter((t) => t.windowId === focusedWindowId && (perWindow.get(t.windowId) ?? 0) > 1
+    && !matchesSite(t.url, s.neverTake));
 
   if (rt.working) {
     const distracting = candidates
