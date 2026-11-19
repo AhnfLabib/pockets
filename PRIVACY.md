@@ -14,6 +14,8 @@ To decide which tab to take, Pockets reads information your browser already has 
 
 To avoid closing a tab with unsaved work, Pockets notices whether you have typed into a form on a page. It records only that typing happened in that tab. It never reads, records or stores what you typed.
 
+While Pockets is on a page, it may glance toward your mouse pointer as part of its animation. It uses the pointer's position on that page only in the moment and never records, stores or sends it.
+
 To start a visit only while you are at the computer, Pockets asks your browser whether you have been active in the last minute. It does not record your activity. To know whether you left the browser during a visit, it asks your browser whether any of its windows is in front; it does not record this either.
 
 ## What Pockets stores
