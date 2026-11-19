@@ -67,18 +67,39 @@ function matches(doc: Document, selector: string): boolean {
 /** Something in the page's top layer may be painted over the stage: an element other than the stage host is
  *  fullscreen, or a modal dialog or a popover is open. The stage host is an ordinary element, so anything in the
  *  top layer covers it. */
+/** The shadow host `el` lives under (the stage host), or null when `el` is in the document itself. */
+function shadowHost(el: HTMLElement): Element | null {
+  const root = el.getRootNode() as Node & { host?: Element };
+  return root !== el.ownerDocument ? root.host ?? null : null;
+}
+
 function topLayerCovers(el: HTMLElement): boolean {
   const doc = el.ownerDocument;
-  const root = el.getRootNode() as Node & { host?: Element };
-  const host = root !== doc ? root.host ?? null : null;
+  const host = shadowHost(el);
   const fs = doc.fullscreenElement;
   if (fs && fs !== host) return true;
   return matches(doc, 'dialog:modal') || matches(doc, ':popover-open');
 }
 
+/** Hit-test the centre of `probe`: the topmost element there must be `el` itself (or, for an element inside a shadow
+ *  root such as the stage's, its shadow host: hits inside a closed root are retargeted to the host). This catches
+ *  anything painted over it, including elements inside other web components, the top layer and fullscreen.
+ *  elementFromPoint skips pointer-events:none, which is why the card has pointer-events:auto. */
+function hitIsOurs(el: HTMLElement, probe: HTMLElement): boolean {
+  const doc = el.ownerDocument;
+  if (typeof doc.elementFromPoint !== 'function') return false;
+  const r = probe.getBoundingClientRect();
+  if (r.width < 1 || r.height < 1) return false;
+  const hit = doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  if (!hit) return false;
+  const host = shadowHost(el);
+  return host ? hit === host : hit === el || el.contains(hit);
+}
+
 /** Whether `el` is laid out, rendered and inside the viewport of a visible document, with nothing in the top layer
- *  (fullscreen element, modal dialog, popover) that could be painted over it. */
-export function onScreen(el: HTMLElement): boolean {
+ *  (fullscreen element, modal dialog, popover) that could be painted over it, and with `el` itself (or its shadow host)
+ *  topmost at the centre of each probe (default: `el`; the card also probes its Keep button). */
+export function onScreen(el: HTMLElement, probes: HTMLElement[] = [el]): boolean {
   const doc = el.ownerDocument;
   const win = doc.defaultView;
   if (!win || doc.visibilityState !== 'visible' || !el.isConnected) return false;
@@ -88,6 +109,7 @@ export function onScreen(el: HTMLElement): boolean {
   if (r.right <= 0 || r.bottom <= 0 || r.left >= win.innerWidth || r.top >= win.innerHeight) return false;
   const check = (el as HTMLElement & { checkVisibility?: (o?: object) => boolean }).checkVisibility;
   if (check && !check.call(el, { opacityProperty: true, visibilityProperty: true })) return false;
+  for (const p of probes) if (!hitIsOurs(el, p)) return false;
   return true;
 }
 
@@ -181,7 +203,7 @@ export class Card implements CardView {
         if (settled) return;
         if (token !== this.showToken || this.el.hidden) return res(false);
         frames++;
-        if (frames >= 2 && onScreen(this.el)) {
+        if (frames >= 2 && this.onScreenNow()) {
           this.ringFg.style.transition = '';
           return res(true);
         }
@@ -191,8 +213,13 @@ export class Card implements CardView {
     });
   }
 
+  /** The card's on-screen check: the card and, while it shows, its Keep button must both be uncovered. */
+  private onScreenNow(): boolean {
+    return onScreen(this.el, this.keep.hidden ? [this.el] : [this.el, this.keep]);
+  }
+
   visible(): boolean {
-    return !this.el.hidden && onScreen(this.el);
+    return !this.el.hidden && this.onScreenNow();
   }
 
   count(remaining: number, total: number): void {

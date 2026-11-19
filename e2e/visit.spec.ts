@@ -475,3 +475,35 @@ test('typed-in: a stale tab typed into is protected until it reloads, then it ca
   expect(v.reason).toBe('stale');
   await tabGone(worker, form.id);
 });
+
+test('top layer in shadow DOM: a modal dialog opened inside a web component after the card appears means NO take', async ({ context, worker, server }) => {
+  const s = await threeTabs(context, worker, {
+    target: serve(server, '/sd-target', page('sd1')),
+    other: serve(server, '/sd-other', page('other')),
+    stage: serve(server, '/sd-stage', page('stage')),
+  });
+  await expectStaleSetup(worker, s.target.id, s.stage.id);
+
+  await testSet(worker, { settings: QUICK_STALE, tick: true });
+  const v = await waitVisit(worker, (x) => x.targetTabId === s.target.id, 'a stale visit for the target');
+  await waitVisit(worker, (x) => x.visitId === v.visitId && x.cardShown, 'card-shown on the stage');
+
+  // document.querySelector('dialog:modal') cannot see this dialog; only the hit test can.
+  const unseen = await s.stagePage.evaluate(() => {
+    const comp = document.createElement('x-overlay');
+    const root = comp.attachShadow({ mode: 'open' });
+    const d = document.createElement('dialog');
+    d.style.cssText = 'width:100vw;height:100vh;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#00a;';
+    d.textContent = 'MODAL IN SHADOW DOM';
+    root.appendChild(d);
+    document.body.appendChild(comp);
+    d.showModal();
+    return document.querySelector('dialog:modal') === null;
+  });
+  expect(unseen, 'the dialog is invisible to document.querySelector').toBe(true);
+
+  await expect.poll(async () => (await runtime(worker))?.visit ?? null, { message: 'visit ended without a take', timeout: 15_000 }).toBeNull();
+  await sleep(2000);
+  expect((await tabs(worker)).map((t) => t.id).sort(), 'nothing closed').toEqual([s.target.id, s.other.id, s.stage.id].sort());
+  expect(await taken(worker)).toEqual([]);
+});

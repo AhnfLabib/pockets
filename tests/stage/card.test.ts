@@ -19,6 +19,9 @@ let modal = false;
 let popover = false;
 let fullscreen: Element | null = null;
 let modalThrows = false;
+/** What document.elementFromPoint answers (jsdom has none). Default: the stage host, i.e. nothing covers the card. */
+let hitAt: (x: number, y: number) => Element | null = () => host;
+const hits: [number, number][] = [];
 
 let host: HTMLElement;
 let card: Card;
@@ -38,6 +41,15 @@ beforeEach(() => {
   document.body.appendChild(host);
   card = new Card(document, root);
   card.el.getBoundingClientRect = rect;
+  // Keep is the card's last row: 12..262 x 133..164, centred at (137, 148.5).
+  keepButton().getBoundingClientRect = () =>
+    ({ left: 12, top: 133, right: 262, bottom: 164, width: 250, height: 31, x: 12, y: 133, toJSON: () => ({}) } as DOMRect);
+  hitAt = () => host;
+  hits.length = 0;
+  (document as unknown as { elementFromPoint: (x: number, y: number) => Element | null }).elementFromPoint = (x, y) => {
+    hits.push([x, y]);
+    return hitAt(x, y);
+  };
   const realQuery = document.querySelector.bind(document);
   vi.spyOn(document, 'querySelector').mockImplementation(((sel: string) => {
     if (sel === 'dialog:modal') {
@@ -52,8 +64,11 @@ beforeEach(() => {
   window.matchMedia = ((q: string) => ({ matches: false, media: q })) as unknown as typeof window.matchMedia;
 });
 
+const keepButton = (): HTMLButtonElement => (card as unknown as { keep: HTMLButtonElement }).keep;
+
 afterEach(() => {
   vi.restoreAllMocks();
+  delete (document as { elementFromPoint?: unknown }).elementFromPoint;
   delete (document as { fullscreenElement?: unknown }).fullscreenElement;
 });
 
@@ -98,6 +113,58 @@ describe('onScreen', () => {
     expect(onScreen(card.el)).toBe(true);
     popover = true;
     expect(onScreen(card.el)).toBe(false);
+  });
+});
+
+describe('onScreen hit test', () => {
+  it('uncovered: on screen, after hit-testing the centres of the card and of the Keep button', () => {
+    card.el.hidden = false;
+    expect(card.visible()).toBe(true);
+    expect(hits).toEqual([[137, 120], [137, 148.5]]);
+  });
+
+  it('a page element painted over the card centre: not on screen', () => {
+    card.el.hidden = false;
+    expect(card.visible()).toBe(true);
+    const cover = document.createElement('div');
+    document.body.appendChild(cover);
+    hitAt = (_x, y) => (y === 120 ? cover : host);
+    expect(card.visible()).toBe(false);
+  });
+
+  it('an element inside another component\'s open shadow root over the card: not on screen', () => {
+    card.el.hidden = false;
+    expect(card.visible()).toBe(true);
+    // The browser retargets a hit inside a shadow root to that root's host: the component, not our stage.
+    const component = document.createElement('x-overlay');
+    const inner = component.attachShadow({ mode: 'open' });
+    inner.appendChild(document.createElement('div'));
+    document.body.appendChild(component);
+    hitAt = () => component;
+    expect(card.visible()).toBe(false);
+  });
+
+  it('only the Keep button covered: not on screen', () => {
+    card.el.hidden = false;
+    const cover = document.createElement('div');
+    hitAt = (_x, y) => (y === 148.5 ? cover : host);
+    expect(card.visible()).toBe(false);
+  });
+
+  it('nothing at the point (outside the viewport), or no elementFromPoint at all: not on screen', () => {
+    card.el.hidden = false;
+    hitAt = () => null;
+    expect(card.visible()).toBe(false);
+    delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+    expect(card.visible()).toBe(false);
+  });
+
+  it('once kept (Keep hidden), only the card centre is probed', () => {
+    card.el.hidden = false;
+    card.kept('Fine. Keep it.', 'x');
+    hits.length = 0;
+    expect(card.visible()).toBe(true);
+    expect(hits).toEqual([[137, 120]]);
   });
 });
 
@@ -166,6 +233,23 @@ describe('runVisit with the real card', () => {
 
   it('an element that goes fullscreen after card-shown: hidden, never take', async () => {
     const v = play((e) => { if (e.type === 'tick' && e.remaining === 1) fullscreen = document.body; });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await v.p;
+    expect(types(v.events).filter((x) => x !== 'alive')).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'hidden']);
+  });
+
+  it('a covering element (no modal, popover or fullscreen) present when the card should show: no card-shown, hidden', async () => {
+    const cover = document.createElement('div');
+    hitAt = () => cover;
+    const v = play();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await v.p;
+    expect(types(v.events).filter((x) => x !== 'alive')).toEqual(['hidden']);
+  });
+
+  it('a covering element that appears after card-shown: hidden, never take', async () => {
+    const component = document.createElement('x-overlay');
+    const v = play((e) => { if (e.type === 'tick' && e.remaining === 2) hitAt = () => component; });
     await vi.advanceTimersByTimeAsync(30_000);
     await v.p;
     expect(types(v.events).filter((x) => x !== 'alive')).toEqual(['card-shown', 'tick 3', 'tick 2', 'tick 1', 'hidden']);
