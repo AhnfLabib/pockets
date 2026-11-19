@@ -7,6 +7,7 @@ import { drawPose, type Sprites } from './render';
 import { Card, Notice, STAGE_CSS } from './card';
 import { runVisit, type Carry } from './sequence';
 import type { VisitEvent, VisitPlan } from '../shared/types';
+import { cleanTitle } from '../shared/title';
 
 export { estimateTabX } from './sequence';
 
@@ -260,8 +261,8 @@ export async function mountStage(host: Document, opts: StageOptions): Promise<St
       const ac = new AbortController();
       abort = ac;
       reduced = win.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      title = plan.title;
-      color = faviconColorFor(plan.title);
+      title = cleanTitle(plan.title);
+      color = faviconColorFor(title);
       void readFaviconColor(win, plan.faviconUrl).then((c) => {
         if (c && abort === ac) color = c;
       });

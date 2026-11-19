@@ -2,6 +2,7 @@
 import type { Store, TakenTab } from '../background/store';
 import type { Settings } from '../shared/types';
 import { siteOf } from '../rules/sites';
+import { cleanTitle } from '../shared/title';
 
 export interface OptionsDeps { store: Store; undo: (takenAt: number) => void }
 
@@ -129,7 +130,7 @@ export async function renderOptions(root: HTMLElement, deps: OptionsDeps): Promi
       const li = el('li', { 'data-taken': String(t.takenAt) });
       const info = el('div', { class: 'info' });
       info.append(
-        el('span', { class: 'title' }, t.title || t.url),
+        el('span', { class: 'title' }, (t.title ? cleanTitle(t.title) : t.url)),
         el('span', { class: 'meta' }, `${siteOf(t.url) ?? t.url} · ${t.reason === 'stale' ? 'stale' : 'distracting'} · ${new Date(t.takenAt).toLocaleString()}`),
       );
       const btn = el('button', { type: 'button' }, 'Reopen');

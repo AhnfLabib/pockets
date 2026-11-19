@@ -26,6 +26,7 @@
 //   - At the deadline (pause.at + graceMs without a notification): still away with a notification -> away take, with a
 //     second notification offering Undo. Otherwise the visit ends quietly.
 // Every public method runs read-decide-write inside one promise queue, so events cannot interleave.
+import { cleanTitle } from '../shared/title';
 import type { ActiveVisit, RuntimeState, TabInfo, ToContent, VisitEvent, VisitPause, VisitPlan } from '../shared/types';
 import { pickTarget, stillEligible } from '../rules/target';
 import { canVisit } from '../rules/pacing';
@@ -336,7 +337,7 @@ export class Visits {
   private async notify(rt: RuntimeState, v: ActiveVisit): Promise<void> {
     const p = v.pause!;
     const id = AWAY_NOTIFICATION + v.visitId;
-    const ok = await this.browser.createNotification(id, { title: `Pockets has his eye on “${p.plan.title}”`, message: AWAY_MESSAGE });
+    const ok = await this.browser.createNotification(id, { title: `Pockets has his eye on “${cleanTitle(p.plan.title)}”`, message: AWAY_MESSAGE });
     const pause: VisitPause = { ...p, notifyTried: true, ...(ok === true ? { notifiedAt: this.now(), notificationId: id } : {}) };
     const next: ActiveVisit = { ...v, pause };
     await this.store.saveRuntime({ ...rt, visit: next });
@@ -451,6 +452,7 @@ export class Visits {
   private async start(rt: RuntimeState, target: TabInfo, reason: 'stale' | 'distracting', stageTabId: number,
                       tabCount: number, countdownSeconds: number, title = target.title, favIconUrl = target.favIconUrl,
                       resume = false): Promise<boolean> {
+    title = cleanTitle(title);
     const now = this.now();
     const visit: ActiveVisit = { visitId: this.newId(), targetTabId: target.id, targetUrl: target.url, stageTabId, reason,
       cardShown: false, startedAt: now };
@@ -553,7 +555,7 @@ export class Visits {
     const windowId = memo?.windowId ?? v.pause?.windowId;
     const known = memo ?? (v.pause ? { title: v.pause.plan.title, favIconUrl: v.pause.plan.faviconUrl } : null);
     const target = known ? null : await this.browser.getTab(v.targetTabId);
-    const title = known?.title ?? target?.title ?? v.targetUrl;
+    const title = cleanTitle(known?.title ?? target?.title ?? v.targetUrl);
     const favIconUrl = known ? known.favIconUrl : target?.favIconUrl;
     const takenAt = this.now();
     const after = await this.end(rt, v);

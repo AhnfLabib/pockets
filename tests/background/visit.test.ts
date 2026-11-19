@@ -182,6 +182,18 @@ describe('Visits: happy path', () => {
     expect(b.to(2, 'pockets/notice')).toEqual([]);
   });
 
+  it('strips a leading unread count from the title everywhere it is shown or stored', async () => {
+    b.tabs.get(2)!.title = '(3) Old page';
+    await v.tick();
+    expect(b.plans(1)[0].title).toBe('Old page');
+    await v.onEvent(1, 'v1', { type: 'card-shown' });
+    for (const n of [3, 2, 1]) { now += 1000; await v.onEvent(1, 'v1', { type: 'tick', remaining: n }); }
+    now += 1000;
+    await v.onEvent(1, 'v1', { type: 'take' });
+    expect((await store.taken())[0].title).toBe('Old page');
+    expect(b.to(1, 'pockets/notice')).toEqual([{ type: 'pockets/notice', title: 'Old page', takenAt: now }]);
+  });
+
   it('a later done for the finished visit closes nothing more', async () => {
     const id = await startShown();
     await v.onEvent(1, id, { type: 'take' });

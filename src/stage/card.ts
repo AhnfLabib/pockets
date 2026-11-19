@@ -2,6 +2,7 @@
 // Neither ever calls focus(); their buttons are the only focusable things on the stage, and a hidden card or
 // notice is display:none so its button leaves the tab order.
 import { CARD_WIDTH, CARD_MARGIN, type CardView } from './sequence';
+import { cleanTitle } from '../shared/title';
 
 /** Styles for everything inside the shadow root. The host itself is reset with `all: initial` in mount.ts. */
 export const STAGE_CSS = `
@@ -302,7 +303,8 @@ export class Notice {
     this.el = el;
   }
 
-  show(title: string, onUndo: () => void): void {
+  show(rawTitle: string, onUndo: () => void): void {
+    const title = cleanTitle(rawTitle);
     const win = this.doc.defaultView!;
     win.clearTimeout(this.timer);
     this.text.textContent = `Pockets took ${title}`;
