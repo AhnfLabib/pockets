@@ -209,6 +209,9 @@ test('keep: clicking "Keep this tab" leaves all three open and puts the target t
   await testSet(worker, { settings: QUICK_STALE, tick: true });
   await waitVisit(worker, (x) => x.targetTabId === s.target.id && x.cardShown, 'card-shown for the target');
   await expect.poll(async () => (await tabFor(worker, s.target.url)).title).toMatch(/^Mine in \d…$/);
+  // The mark's icon comes from the background as a data: URL on pockets/mark (no web_accessible_resources).
+  await expect.poll(() => s.targetPage.evaluate(() => document.querySelector<HTMLLinkElement>('link[rel~="icon"]')?.getAttribute('href') ?? ''))
+    .toMatch(/^data:image\/png;base64,/);
   await sleep(300); // past the card's 0.2 s pop-in
 
   const all = await tabs(worker);
@@ -220,6 +223,7 @@ test('keep: clicking "Keep this tab" leaves all three open and puts the target t
   await expect.poll(async () => (await runtime(worker))?.visit ?? null, { message: 'visit ended by Keep' }).toBeNull();
   expect((await runtime(worker))!.spared[String(s.target.id)], 'target spared').toBeTruthy();
   await expect.poll(async () => (await tabFor(worker, s.target.url)).title).toBe('k1');
+  expect(await s.targetPage.evaluate(() => document.querySelectorAll('link[rel~="icon"]').length), 'mark icon removed').toBe(0);
 
   // Well past when the countdown would have ended: nothing was taken.
   await sleep(4000);

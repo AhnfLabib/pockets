@@ -136,3 +136,37 @@ test('orphan: an idle marked tab with no events puts its own title and icon back
   await expect.poll(() => page.evaluate(() => document.querySelectorAll('pockets-stage').length)).toBe(0);
   expect(errors).toEqual([]);
 });
+
+test('strict page CSP: the stage mounts from the background-served data URLs and the tab is marked', async ({ context, worker, server }) => {
+  server.route('/csp-strict', (_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'none'" });
+    res.end(`<!doctype html><html><head><title>Strict page</title></head><body><input id="t"></body></html>`);
+  });
+  const url = server.origin + '/csp-strict';
+  const page = context.pages()[0] ?? (await context.newPage());
+  const errors = collectErrors(page);
+  await page.goto(url);
+  const tabId = await tabIdFor(worker, url);
+  await contentReady(worker, tabId);
+  // The sprite sheets and the notice icon are decoded in the content script's isolated world: the page CSP does not
+  // stop them, so the stage mounts and nothing is logged.
+  expect(await toTab(worker, tabId, { type: 'pockets/notice', title: 'Some tab', takenAt: 1 })).toEqual({ ok: true });
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll('pockets-stage').length)).toBe(1);
+  await page.waitForTimeout(500);
+  expect(errors, 'mounting the stage logs nothing under a strict CSP').toEqual([]);
+
+  // The tab icon is a <link rel=icon> the browser loads for the page, so the page's CSP applies to it. With img-src
+  // closed (here via default-src 'none') the data: icon is refused and the browser logs a CSP violation: the mark is
+  // then title-only. Recorded, not hidden: the old chrome-extension:// icon bypassed page CSP but needed
+  // web_accessible_resources, which is gone.
+  const icon = await markIcon(worker);
+  expect(await toTab(worker, tabId, { type: 'pockets/mark', remaining: 3, icon })).toEqual({ ok: true });
+  expect(await page.title()).toBe('Mine in 3…');
+  await page.waitForTimeout(1500);
+  const fav = await worker.evaluate(async (id) => (await chrome.tabs.get(id)).favIconUrl ?? '', tabId);
+  test.info().annotations.push({ type: 'finding', description: `strict CSP: favIconUrl ${fav === icon ? 'is the mark icon' : `"${fav.slice(0, 40)}"`}; ` +
+    `logged: ${errors.map((e) => e.slice(0, 120)).join(' | ') || 'nothing'}` });
+  expect(fav, 'the CSP refuses the data: tab icon (recorded behaviour)').not.toBe(icon);
+  expect(errors.filter((e) => !/Loading the image 'data:image\/png;base64,.*Content Security Policy directive/s.test(e)), 'nothing logged but the refused icon')
+    .toEqual([]);
+});
