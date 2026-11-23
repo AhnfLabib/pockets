@@ -25,19 +25,19 @@ export const Spotlit: React.FC<SceneProps> = ({ m, track }) => {
   const f = useCurrentFrame();
   const { fps } = useVideoConfig();
   const L = useLayout();
-  const n = 104 + f * 0.6; // climbing over the page edge, just before the card appears
+  const n = 138 + f; // perched under the strip, eyes on the tabs (the climb itself is scene 3)
   const [hx, hy] = headAt(track, Math.round(n), 6);
   // Low in the frame so the crammed strip shows above him.
   const s = L.square ? 4.6 : 7.6;
-  const x = L.subject.x + 60, y = L.square ? L.H * 0.5 : L.subject.y + 250;
-  const iris = snap(f - 1, fps);
+  // Head to the right so the warning card (to his lower right) stays off-frame; his body and tail cross the frame.
+  const x = L.W * (L.square ? 0.84 : 0.78), y = L.square ? L.H * 0.42 : L.subject.y + 80;
+  const iris = snap(f, fps);
   return (
     <AbsoluteFill style={{ background: N.bgDeep }}>
-      <AbsoluteFill style={{ transform: `scale(${punch(f - 1, fps, 0.1)})` }}>
+      <AbsoluteFill style={{ transform: `scale(${punch(f, fps, 0.1)})` }}>
         <Shot m={m} n={n} cx={hx} cy={hy} x={x} y={y} scale={s} />
       </AbsoluteFill>
-      <Spotlight x={x - 40} y={y - (L.square ? 150 : 260)} r={30 + (L.square ? 520 : 680) * iris} dark={0.95} />
-      {f < 1 ? <AbsoluteFill style={{ background: "#000" }} /> : null}
+      <Spotlight x={x - 160} y={y - (L.square ? 120 : 200)} r={30 + (L.square ? 500 : 640) * iris} dark={0.95} />
     </AbsoluteFill>
   );
 };
@@ -56,13 +56,14 @@ export const Whip: React.FC<SceneProps> = ({ m }) => {
   const blur = Math.abs(p - p0) * span * s * 0.12;
   const drift = interpolate(f, [8, 60], [0, -6], clamp);
   const x = L.subject.x, y = L.subject.y - 120;
-  const glow = snap(f - 8, fps);
+  const glowAt = B(SCENES.whip[0] + 1) - B(SCENES.whip[0]); // lands with "is mine."
+  const glow = snap(f - glowAt, fps);
   return (
     <AbsoluteFill style={{ background: N.bgDeep }}>
       <Shot m={m} n={n} cx={cx + drift} cy={TAB.y} x={x} y={y} scale={s} blur={blur} />
       <Spotlight x={x} y={y} r={220 + 140 * glow} dark={0.9} />
       {glow > 0 ? (
-        <div style={{ position: "absolute", left: x - 70, top: y - 150, width: 140, height: 300, border: `6px solid ${N.red}`, borderRadius: 18, boxShadow: `0 0 60px ${N.red}`, opacity: glow, transform: `scale(${punch(f - 8, fps, 0.4)})` }} />
+        <div style={{ position: "absolute", left: x - 70, top: y - 150, width: 140, height: 300, border: `6px solid ${N.red}`, borderRadius: 18, boxShadow: `0 0 60px ${N.red}`, opacity: glow, transform: `scale(${punch(f - glowAt, fps, 0.4)})` }} />
       ) : null}
     </AbsoluteFill>
   );
@@ -217,7 +218,7 @@ export const Pinned: React.FC<SceneProps> = ({ m, track }) => {
     <AbsoluteFill style={{ background: N.bg, transform: `scale(${punch(f, fps, 0.12)})` }}>
       <Pool x={x} y={y} r={600} />
       <div style={{ position: "absolute", left: x - tabW / 2 + 120, top: y - 110, width: tabW, height: 220, background: "#2a2f38", borderRadius: "40px 40px 0 0", display: "flex", alignItems: "center", gap: 34, padding: "0 50px", boxShadow: "0 30px 60px rgba(0,0,0,.5)" }}>
-        <div style={{ width: 84, height: 84, borderRadius: 16, background: "#3d7be0" }} />
+        <div style={{ width: 84, height: 84, borderRadius: 16, background: "#6b7079" }} />
         <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 52, color: N.ink }}>Inbox</div>
         <div style={{ marginLeft: "auto" }}><Pin size={78} color={N.red} /></div>
       </div>
@@ -268,7 +269,7 @@ export const LastTab: React.FC<SceneProps> = ({ m, track }) => {
       <Pool x={x} y={y} r={600} />
       <div style={{ position: "absolute", left: x - stripW / 2, top: y - 90, width: stripW, height: 180, background: "#0e1014", borderRadius: 26, padding: "34px 30px 0", boxShadow: "0 30px 60px rgba(0,0,0,.5)" }}>
         <div style={{ width: 420, height: 146, background: "#2a2f38", borderRadius: "30px 30px 0 0", display: "flex", alignItems: "center", gap: 26, padding: "0 36px" }}>
-          <div style={{ width: 64, height: 64, borderRadius: 12, background: "#2f9d62" }} />
+          <div style={{ width: 64, height: 64, borderRadius: 12, background: "#6b7079" }} />
           <div style={{ fontFamily: MONO, fontWeight: 700, fontSize: 44, color: N.ink }}>Q3 report</div>
         </div>
       </div>

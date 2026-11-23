@@ -119,6 +119,7 @@ export function events(): { frame: number; beat: number; kind: "cut" | "caption"
   for (const l of CAPTIONS) l.rows.forEach((r, i) => out.push({ beat: l.beat + i, frame: B(l.beat + i), kind: "caption", what: r.replace(/\*/g, "") }));
   const extra: [number, string][] = [
     [SCENES.climb[0] + 2, "tag: TARGET: YouTube · IDLE 2 DAYS"],
+    [SCENES.whip[0] + 1, "glow on the target tab"],
     ...COUNTDOWN.map((c): [number, string] => [c.beat, `countdown digit ${c.n}`]),
     [SCENES.working[0] + 5, "tag: DISTRACTION: YouTube"],
     [SCENES.local[0] + 1, "lock icon"],
