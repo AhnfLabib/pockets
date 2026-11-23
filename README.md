@@ -1,6 +1,10 @@
-# Pockets
+# Pockets: the tab-stealing raccoon
+
+[![Available in the Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Install%20Pockets-d9483b?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/pockets-the-tab-stealing/hdieeeidkhiocfjkkjdnaogeecglpiof)
 
 Pockets is a raccoon who lives in Chrome and takes your tabs.
+
+**Install:** [Pockets on the Chrome Web Store](https://chromewebstore.google.com/detail/pockets-the-tab-stealing/hdieeeidkhiocfjkkjdnaogeecglpiof). It also works in other Chromium browsers that install from the Chrome Web Store, such as Edge, Brave, Arc and Comet. The rest of this README is for building it from source.
 
 Every so often it pokes its head in from an edge of the page you are on (sometimes with a remark), climbs the
 nearer side, crosses to under the tab it has its eye on and says so: "Mine in 5…". The tab's own title counts down
