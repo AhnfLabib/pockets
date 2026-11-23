@@ -5,3 +5,4 @@ public/popup/
 *.log
 .harness/
 public/music/
+public/heist-popup/

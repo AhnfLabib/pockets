@@ -7,7 +7,8 @@
 // The intro video's hook uses the crowded-tab-strip variant page (capture/build-harness.mjs builds it):
 //   node capture/capture.mjs --seed 6 --variant portrait --page crowded --tabs 32 --target 12 --out intro
 // --page crowded loads .harness/crowded.html instead of dist-harness/character.html; --out names the folder under
-// public/footage/ (default: the variant). Without these flags the capture is exactly as before.
+// public/footage/ (default: the variant); --dsf overrides the capture scale;
+// --scheme dark captures the page in dark mode, --bare Pockets alone on a transparent page (the heist video). Without these flags the capture is exactly as before.
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -35,7 +36,7 @@ const T0 = Date.parse('2026-11-19T10:00:00Z');
 function pageUrl() {
   if (args.page === 'crowded') {
     const u = pathToFileURL(path.join(here, '../.harness/crowded.html'));
-    u.search = new URLSearchParams({ tabs: String(args.tabs ?? 32), target: String(args.target ?? 12) }).toString();
+    u.search = new URLSearchParams({ tabs: String(args.tabs ?? 32), target: String(args.target ?? 12), ...(args.bare ? { bare: '1' } : {}) }).toString();
     return u.href;
   }
   return pathToFileURL(path.join(root, 'dist-harness/character.html')).href;
@@ -70,7 +71,7 @@ async function stepAnimations(page, dt) {
 }
 
 async function open(browser, v) {
-  const ctx = await browser.newContext({ viewport: { width: v.width + 40, height: v.pageHeight + 200 }, deviceScaleFactor: v.dsf, colorScheme: 'light', reducedMotion: 'no-preference' });
+  const ctx = await browser.newContext({ viewport: { width: v.width + 40, height: v.pageHeight + 200 }, deviceScaleFactor: v.dsf, colorScheme: args.scheme === 'dark' ? 'dark' : 'light', reducedMotion: 'no-preference' });
   const page = await ctx.newPage();
   // A fixed start time and a fixed pause point, so the fake requestAnimationFrame ticks fall at the same instants
   // on every run. The rig and the choreography share one seeded rand, so their interleaving must not vary.
@@ -146,7 +147,8 @@ try {
   } else {
     const seed = Number(args.seed);
     const variant = args.variant ?? 'landscape';
-    const v = VARIANTS[variant];
+    // --dsf overrides the capture scale (the heist video's tight crops use 3).
+    const v = { ...VARIANTS[variant], ...(args.dsf ? { dsf: Number(args.dsf) } : {}) };
     const dir = path.join(here, '../public/footage', String(args.out ?? variant));
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });

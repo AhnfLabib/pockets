@@ -1,6 +1,7 @@
 // Captures the extension's real toolbar popup (dist/popup.html) with chrome.* stubbed, the same stub as
 // tools/store/shots.mjs: frame 0 with working mode off, then the switch is clicked and the switch's CSS
 // transition is stepped one video frame (1/30 s) at a time. Run from tools/promo-video after `npm run build`.
+// Flags (heist video): --scheme dark captures the popup's dark theme; --out names the folder under public/ (default popup).
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -9,12 +10,16 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../../..');
 const { chromium } = createRequire(path.join(root, 'package.json'))('playwright');
-const dir = path.join(here, '../public/popup');
+const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => {
+  if (a.startsWith('--')) acc.push([a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]);
+  return acc;
+}, []));
+const dir = path.join(here, '../public', String(args.out ?? 'popup'));
 rmSync(dir, { recursive: true, force: true });
 mkdirSync(dir, { recursive: true });
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 320, height: 600 }, deviceScaleFactor: 3, colorScheme: 'light' });
+const ctx = await browser.newContext({ viewport: { width: 320, height: 600 }, deviceScaleFactor: 3, colorScheme: args.scheme === 'dark' ? 'dark' : 'light' });
 await ctx.addInitScript(() => {
   const now = Date.now();
   const db = {

@@ -94,3 +94,45 @@ FINAL=1 ./render-intro.sh              # full size: out/intro/pockets-intro.mp4
 Outputs go to `out/intro/`: `storyboard.png` and `storyboard.md` (from `scripts/intro-stills.mjs` and
 `scripts/intro-sheets.py`), and `stills/` (each still as a 1080×1920 portrait and a 1080×1080 square, PNG RGB).
 `node capture/capture.mjs --scan 1-20 --variant portrait --page crowded` compares seeds on the crowded page.
+
+## Heist video (LinkedIn, portrait, cut to the music)
+
+A third cut, `Heist-Portrait` (1080×1920, 30 fps, about 26 s), in a "night heist" style: dark charcoal, a spotlight
+on Pockets, red (#d9483b) as the only accent, real footage cropped tight in dark mode, huge Anton captions a few words
+per beat, Space Mono case-file tags. Its scenes are in `src/heist/`. `Heist-Square` (1080×1080) is the same timeline
+laid out for a square frame, used for stills.
+
+**Cut to the beats.** The music is "Fast Percussion" by lNPLUSMUSIC (Pixabay Content License: free use, no
+attribution required), committed at `public/heist/fast-percussion.mp3`. `scripts/heist-beats.py` decodes it once with
+ffmpeg, finds the tempo (140 BPM, by onset autocorrelation and a grid fit; librosa's own beat tracker reads 105, three
+quarters of the pulse), the beat phase, the 8-beat phrases and their accents, and the start offset inside the track
+(it is near silent for its first 1.5 s). It writes `src/heist/beats.json` in video time (seconds and frames).
+`src/heist/timeline.ts` places every cut, caption change and action hit on beat indices relative to the phrase accents:
+the steal and Undo on the strongest adjacent pair mid-story, the end card on the second-to-last accent, the video ending
+0.5 s after the last accent with a fade. Re-run the analysis and the edit re-times itself. Footage frames are pinned to
+beats too: the card's own ticks land on the giant countdown digits, the take on the steal beat, the Undo click on the
+Undo beat.
+
+**Footage.** Three extra captures, all gitignored: the crowded page with 47 tabs in dark mode at 3× (the sprites are
+drawn at 3×, so more adds nothing), the same visit on a transparent page (`--bare`: Pockets alone on alpha, for the
+graphic scenes), and the dark popup. `scripts/heist-track.py` tracks his head (his eye whites) so the spotlight and the
+crops follow him. The flags added for this (`--dsf`, `--scheme dark`, `--bare`; `popup.mjs --scheme --out`) leave the
+other captures exactly as before; `harness/crowded.ts` gained a dark page style and the `bare` query.
+
+```
+# From the repository root: npm install && npm run build. Then, in tools/promo-video (Python: librosa, scipy, matplotlib):
+node capture/build-harness.mjs
+node capture/capture.mjs --seed 1 --variant portrait --page crowded --tabs 47 --target 19 --dsf 3 --scheme dark --out heist
+node capture/capture.mjs --seed 1 --variant portrait --page crowded --tabs 47 --target 19 --dsf 3 --bare --out heist-bare
+node capture/popup.mjs --scheme dark --out heist-popup
+export REMOTION_BROWSER=/path/to/chrome-headless-shell   # if Remotion cannot download its own
+./render-heist.sh            # rough cut: out/heist/heist-roughcut.mp4 (1080x1920, JPEG frames)
+FINAL=1 ./render-heist.sh    # out/heist/pockets-heist.mp4
+```
+
+The script renders the picture muted, then trims the decoded track sample-accurately at the analysis offset, fades the
+tail, normalises to −14 LUFS integrated with true peak at most −1 dBTP (`scripts/heist-audio.py`: linear gain and a
+peak limiter) and muxes H.264 yuv420p + AAC. It also writes `out/heist/beat-map.png` and `heist.md` (every beat-synced
+event and its time, `scripts/heist-map.py`), runs `scripts/heist-sync.py` (asserts every event is within a frame of its
+beat, and independently checks the mp4's detected cuts and its music's accents against the beat grid) and renders the
+four stills as portrait and square PNGs into `out/heist/stills/` (`scripts/heist-stills.py`).

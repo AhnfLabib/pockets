@@ -1,0 +1,850 @@
+{
+ "source": "public/heist/fast-percussion.mp3",
+ "decoded": "out/heist/track.wav (ffmpeg, 44.1 kHz)",
+ "fps": 30,
+ "bpm": 140.054,
+ "period": 0.42841,
+ "phraseBeats": 8,
+ "offset": 1.76363,
+ "trackDuration": 30.4588,
+ "librosaBeatTrackBpm": 139.53,
+ "beats": [
+  {
+   "i": 0,
+   "t": 0.0,
+   "frame": 0,
+   "bar": 1,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.1555,
+   "onset": 0.2797,
+   "audible": true
+  },
+  {
+   "i": 1,
+   "t": 0.4284,
+   "frame": 13,
+   "bar": 1,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.0953,
+   "onset": 0.3175,
+   "audible": true
+  },
+  {
+   "i": 2,
+   "t": 0.8568,
+   "frame": 26,
+   "bar": 1,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.2169,
+   "onset": 0.5545,
+   "audible": true
+  },
+  {
+   "i": 3,
+   "t": 1.2852,
+   "frame": 39,
+   "bar": 1,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.253,
+   "onset": 0.5143,
+   "audible": true
+  },
+  {
+   "i": 4,
+   "t": 1.7136,
+   "frame": 51,
+   "bar": 2,
+   "beatInBar": 0,
+   "phraseStart": true,
+   "accent": 0.8859,
+   "onset": 0.7284,
+   "audible": true
+  },
+  {
+   "i": 5,
+   "t": 2.142,
+   "frame": 64,
+   "bar": 2,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.1214,
+   "onset": 0.4046,
+   "audible": true
+  },
+  {
+   "i": 6,
+   "t": 2.5704,
+   "frame": 77,
+   "bar": 2,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1411,
+   "onset": 0.4013,
+   "audible": true
+  },
+  {
+   "i": 7,
+   "t": 2.9988,
+   "frame": 90,
+   "bar": 2,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.3908,
+   "onset": 0.4067,
+   "audible": true
+  },
+  {
+   "i": 8,
+   "t": 3.4273,
+   "frame": 103,
+   "bar": 3,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.5472,
+   "onset": 0.7569,
+   "audible": true
+  },
+  {
+   "i": 9,
+   "t": 3.8557,
+   "frame": 116,
+   "bar": 3,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.12,
+   "onset": 0.3998,
+   "audible": true
+  },
+  {
+   "i": 10,
+   "t": 4.2841,
+   "frame": 129,
+   "bar": 3,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1841,
+   "onset": 0.4998,
+   "audible": true
+  },
+  {
+   "i": 11,
+   "t": 4.7125,
+   "frame": 141,
+   "bar": 3,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.2388,
+   "onset": 0.4954,
+   "audible": true
+  },
+  {
+   "i": 12,
+   "t": 5.1409,
+   "frame": 154,
+   "bar": 4,
+   "beatInBar": 0,
+   "phraseStart": true,
+   "accent": 0.917,
+   "onset": 0.7544,
+   "audible": true
+  },
+  {
+   "i": 13,
+   "t": 5.5693,
+   "frame": 167,
+   "bar": 4,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.1071,
+   "onset": 0.357,
+   "audible": true
+  },
+  {
+   "i": 14,
+   "t": 5.9977,
+   "frame": 180,
+   "bar": 4,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.4764,
+   "onset": 0.6094,
+   "audible": true
+  },
+  {
+   "i": 15,
+   "t": 6.4261,
+   "frame": 193,
+   "bar": 4,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.3111,
+   "onset": 0.4318,
+   "audible": true
+  },
+  {
+   "i": 16,
+   "t": 6.8545,
+   "frame": 206,
+   "bar": 5,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.1261,
+   "onset": 0.2483,
+   "audible": true
+  },
+  {
+   "i": 17,
+   "t": 7.2829,
+   "frame": 218,
+   "bar": 5,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.1187,
+   "onset": 0.3958,
+   "audible": true
+  },
+  {
+   "i": 18,
+   "t": 7.7113,
+   "frame": 231,
+   "bar": 5,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1809,
+   "onset": 0.482,
+   "audible": true
+  },
+  {
+   "i": 19,
+   "t": 8.1397,
+   "frame": 244,
+   "bar": 5,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.2104,
+   "onset": 0.4466,
+   "audible": true
+  },
+  {
+   "i": 20,
+   "t": 8.5681,
+   "frame": 257,
+   "bar": 6,
+   "beatInBar": 0,
+   "phraseStart": true,
+   "accent": 1.0296,
+   "onset": 0.8488,
+   "audible": true
+  },
+  {
+   "i": 21,
+   "t": 8.9965,
+   "frame": 270,
+   "bar": 6,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.1017,
+   "onset": 0.3389,
+   "audible": true
+  },
+  {
+   "i": 22,
+   "t": 9.4249,
+   "frame": 283,
+   "bar": 6,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1556,
+   "onset": 0.4421,
+   "audible": true
+  },
+  {
+   "i": 23,
+   "t": 9.8533,
+   "frame": 296,
+   "bar": 6,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.584,
+   "onset": 0.6353,
+   "audible": true
+  },
+  {
+   "i": 24,
+   "t": 10.2818,
+   "frame": 308,
+   "bar": 7,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.4909,
+   "onset": 0.6697,
+   "audible": true
+  },
+  {
+   "i": 25,
+   "t": 10.7102,
+   "frame": 321,
+   "bar": 7,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.1258,
+   "onset": 0.4194,
+   "audible": true
+  },
+  {
+   "i": 26,
+   "t": 11.1386,
+   "frame": 334,
+   "bar": 7,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1925,
+   "onset": 0.4911,
+   "audible": true
+  },
+  {
+   "i": 27,
+   "t": 11.567,
+   "frame": 347,
+   "bar": 7,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.195,
+   "onset": 0.4063,
+   "audible": true
+  },
+  {
+   "i": 28,
+   "t": 11.9954,
+   "frame": 360,
+   "bar": 8,
+   "beatInBar": 0,
+   "phraseStart": true,
+   "accent": 1.172,
+   "onset": 1.0,
+   "audible": true
+  },
+  {
+   "i": 29,
+   "t": 12.4238,
+   "frame": 373,
+   "bar": 8,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.3839,
+   "onset": 0.4855,
+   "audible": true
+  },
+  {
+   "i": 30,
+   "t": 12.8522,
+   "frame": 386,
+   "bar": 8,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.3799,
+   "onset": 0.5252,
+   "audible": true
+  },
+  {
+   "i": 31,
+   "t": 13.2806,
+   "frame": 398,
+   "bar": 8,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.1218,
+   "onset": 0.187,
+   "audible": true
+  },
+  {
+   "i": 32,
+   "t": 13.709,
+   "frame": 411,
+   "bar": 9,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.0878,
+   "onset": 0.2905,
+   "audible": true
+  },
+  {
+   "i": 33,
+   "t": 14.1374,
+   "frame": 424,
+   "bar": 9,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.0904,
+   "onset": 0.3013,
+   "audible": true
+  },
+  {
+   "i": 34,
+   "t": 14.5658,
+   "frame": 437,
+   "bar": 9,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.141,
+   "onset": 0.3868,
+   "audible": true
+  },
+  {
+   "i": 35,
+   "t": 14.9942,
+   "frame": 450,
+   "bar": 9,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.1281,
+   "onset": 0.2543,
+   "audible": true
+  },
+  {
+   "i": 36,
+   "t": 15.4226,
+   "frame": 463,
+   "bar": 10,
+   "beatInBar": 0,
+   "phraseStart": true,
+   "accent": 0.7731,
+   "onset": 0.6478,
+   "audible": true
+  },
+  {
+   "i": 37,
+   "t": 15.851,
+   "frame": 476,
+   "bar": 10,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.1096,
+   "onset": 0.3652,
+   "audible": true
+  },
+  {
+   "i": 38,
+   "t": 16.2794,
+   "frame": 488,
+   "bar": 10,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1833,
+   "onset": 0.4686,
+   "audible": true
+  },
+  {
+   "i": 39,
+   "t": 16.7079,
+   "frame": 501,
+   "bar": 10,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.5503,
+   "onset": 0.5687,
+   "audible": true
+  },
+  {
+   "i": 40,
+   "t": 17.1363,
+   "frame": 514,
+   "bar": 11,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.354,
+   "onset": 0.5058,
+   "audible": true
+  },
+  {
+   "i": 41,
+   "t": 17.5647,
+   "frame": 527,
+   "bar": 11,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.1013,
+   "onset": 0.3377,
+   "audible": true
+  },
+  {
+   "i": 42,
+   "t": 17.9931,
+   "frame": 540,
+   "bar": 11,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1172,
+   "onset": 0.3525,
+   "audible": true
+  },
+  {
+   "i": 43,
+   "t": 18.4215,
+   "frame": 553,
+   "bar": 11,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.1144,
+   "onset": 0.2398,
+   "audible": true
+  },
+  {
+   "i": 44,
+   "t": 18.8499,
+   "frame": 565,
+   "bar": 12,
+   "beatInBar": 0,
+   "phraseStart": true,
+   "accent": 0.6473,
+   "onset": 0.557,
+   "audible": true
+  },
+  {
+   "i": 45,
+   "t": 19.2783,
+   "frame": 578,
+   "bar": 12,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.0797,
+   "onset": 0.2656,
+   "audible": true
+  },
+  {
+   "i": 46,
+   "t": 19.7067,
+   "frame": 591,
+   "bar": 12,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.4621,
+   "onset": 0.6411,
+   "audible": true
+  },
+  {
+   "i": 47,
+   "t": 20.1351,
+   "frame": 604,
+   "bar": 12,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.3625,
+   "onset": 0.4663,
+   "audible": true
+  },
+  {
+   "i": 48,
+   "t": 20.5635,
+   "frame": 617,
+   "bar": 13,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.1326,
+   "onset": 0.2653,
+   "audible": true
+  },
+  {
+   "i": 49,
+   "t": 20.9919,
+   "frame": 630,
+   "bar": 13,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.0877,
+   "onset": 0.2925,
+   "audible": true
+  },
+  {
+   "i": 50,
+   "t": 21.4203,
+   "frame": 643,
+   "bar": 13,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1515,
+   "onset": 0.4005,
+   "audible": true
+  },
+  {
+   "i": 51,
+   "t": 21.8487,
+   "frame": 655,
+   "bar": 13,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.1116,
+   "onset": 0.2259,
+   "audible": true
+  },
+  {
+   "i": 52,
+   "t": 22.2771,
+   "frame": 668,
+   "bar": 14,
+   "beatInBar": 0,
+   "phraseStart": true,
+   "accent": 0.716,
+   "onset": 0.6195,
+   "audible": true
+  },
+  {
+   "i": 53,
+   "t": 22.7055,
+   "frame": 681,
+   "bar": 14,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.1111,
+   "onset": 0.3703,
+   "audible": true
+  },
+  {
+   "i": 54,
+   "t": 23.1339,
+   "frame": 694,
+   "bar": 14,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1349,
+   "onset": 0.4211,
+   "audible": true
+  },
+  {
+   "i": 55,
+   "t": 23.5624,
+   "frame": 707,
+   "bar": 14,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.2953,
+   "onset": 0.4459,
+   "audible": true
+  },
+  {
+   "i": 56,
+   "t": 23.9908,
+   "frame": 720,
+   "bar": 15,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.2732,
+   "onset": 0.3841,
+   "audible": true
+  },
+  {
+   "i": 57,
+   "t": 24.4192,
+   "frame": 733,
+   "bar": 15,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.0763,
+   "onset": 0.2544,
+   "audible": true
+  },
+  {
+   "i": 58,
+   "t": 24.8476,
+   "frame": 745,
+   "bar": 15,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.1653,
+   "onset": 0.4576,
+   "audible": true
+  },
+  {
+   "i": 59,
+   "t": 25.276,
+   "frame": 758,
+   "bar": 15,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.112,
+   "onset": 0.2189,
+   "audible": true
+  },
+  {
+   "i": 60,
+   "t": 25.7044,
+   "frame": 771,
+   "bar": 16,
+   "beatInBar": 0,
+   "phraseStart": true,
+   "accent": 0.6651,
+   "onset": 0.5777,
+   "audible": true
+  },
+  {
+   "i": 61,
+   "t": 26.1328,
+   "frame": 784,
+   "bar": 16,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.0206,
+   "onset": 0.0686,
+   "audible": true
+  },
+  {
+   "i": 62,
+   "t": 26.5612,
+   "frame": 797,
+   "bar": 16,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.3492,
+   "onset": 0.4678,
+   "audible": true
+  },
+  {
+   "i": 63,
+   "t": 26.9896,
+   "frame": 810,
+   "bar": 16,
+   "beatInBar": 3,
+   "phraseStart": false,
+   "accent": 0.1468,
+   "onset": 0.2832,
+   "audible": true
+  },
+  {
+   "i": 64,
+   "t": 27.418,
+   "frame": 823,
+   "bar": 17,
+   "beatInBar": 0,
+   "phraseStart": false,
+   "accent": 0.0148,
+   "onset": 0.0494,
+   "audible": true
+  },
+  {
+   "i": 65,
+   "t": 27.8464,
+   "frame": 835,
+   "bar": 17,
+   "beatInBar": 1,
+   "phraseStart": false,
+   "accent": 0.0069,
+   "onset": 0.0229,
+   "audible": false
+  },
+  {
+   "i": 66,
+   "t": 28.2748,
+   "frame": 848,
+   "bar": 17,
+   "beatInBar": 2,
+   "phraseStart": false,
+   "accent": 0.0009,
+   "onset": 0.003,
+   "audible": false
+  }
+ ],
+ "phraseAccents": [
+  {
+   "i": 4,
+   "t": 1.7136,
+   "frame": 51,
+   "accent": 0.8859
+  },
+  {
+   "i": 12,
+   "t": 5.1409,
+   "frame": 154,
+   "accent": 0.917
+  },
+  {
+   "i": 20,
+   "t": 8.5681,
+   "frame": 257,
+   "accent": 1.0296
+  },
+  {
+   "i": 28,
+   "t": 11.9954,
+   "frame": 360,
+   "accent": 1.172
+  },
+  {
+   "i": 36,
+   "t": 15.4226,
+   "frame": 463,
+   "accent": 0.7731
+  },
+  {
+   "i": 44,
+   "t": 18.8499,
+   "frame": 565,
+   "accent": 0.6473
+  },
+  {
+   "i": 52,
+   "t": 22.2771,
+   "frame": 668,
+   "accent": 0.716
+  },
+  {
+   "i": 60,
+   "t": 25.7044,
+   "frame": 771,
+   "accent": 0.6651
+  }
+ ],
+ "strongest": [
+  {
+   "i": 28,
+   "t": 11.9954,
+   "frame": 360,
+   "accent": 1.172
+  },
+  {
+   "i": 20,
+   "t": 8.5681,
+   "frame": 257,
+   "accent": 1.0296
+  },
+  {
+   "i": 12,
+   "t": 5.1409,
+   "frame": 154,
+   "accent": 0.917
+  },
+  {
+   "i": 4,
+   "t": 1.7136,
+   "frame": 51,
+   "accent": 0.8859
+  },
+  {
+   "i": 36,
+   "t": 15.4226,
+   "frame": 463,
+   "accent": 0.7731
+  },
+  {
+   "i": 52,
+   "t": 22.2771,
+   "frame": 668,
+   "accent": 0.716
+  },
+  {
+   "i": 60,
+   "t": 25.7044,
+   "frame": 771,
+   "accent": 0.6651
+  },
+  {
+   "i": 44,
+   "t": 18.8499,
+   "frame": 565,
+   "accent": 0.6473
+  }
+ ]
+}

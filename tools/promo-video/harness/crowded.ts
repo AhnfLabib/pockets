@@ -14,6 +14,9 @@ const q = new URLSearchParams(location.search);
 const COUNT = Math.max(5, Math.min(80, Number(q.get('tabs') ?? 32)));
 const TARGET = Math.max(1, Math.min(COUNT - 1, Number(q.get('target') ?? 12)));
 const ACTIVE = 0;
+// ?bare=1 (heist video): the same visit with a transparent page and hidden chrome, so a capture with
+// omitBackground gives Pockets alone on alpha, frame-for-frame identical to the normal capture.
+const BARE = q.get('bare') === '1';
 
 // Favicon colours for a believable mess of sites; the target is YouTube red.
 const PALETTE = ['#3d7be0', '#d9962f', '#2f9d62', '#7a5bd0', '#1c2230', '#e0663d', '#2a9bb5', '#c2417a', '#6b7a8f', '#4f8f2f', '#b5852a', '#5b4bd6'];
@@ -24,6 +27,7 @@ const TABS = Array.from({ length: COUNT }, (_, i) =>
 
 const PAGE_DOC = `<!doctype html><html><head><meta charset="utf-8"><style>
 :root{--ink:#1c2230;--ghost:#e4e7ec;--page:#fff}
+@media (prefers-color-scheme: dark){:root{--ink:#e8ebf0;--ghost:#2e333c;--page:#20242b;color-scheme:dark}}
 html,body{margin:0;height:100%;background:var(--page);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .doc{padding:34px clamp(70px,14%,130px);display:flex;flex-direction:column;gap:12px}
 h3{font-size:20px;margin:0 0 6px}
@@ -91,7 +95,12 @@ function markTarget(remaining: number): void {
 async function start(): Promise<void> {
   buildTabs();
   const loaded = new Promise<void>((res) => frame.addEventListener('load', () => res(), { once: true }));
-  frame.srcdoc = PAGE_DOC;
+  if (BARE) {
+    const st = document.createElement('style');
+    st.textContent = '.browser{background:transparent!important;border-color:transparent!important}.strip,.url{visibility:hidden}#page{background:transparent!important}';
+    document.head.append(st);
+  }
+  frame.srcdoc = BARE ? PAGE_DOC.replace('</style>', 'html,body{background:transparent!important}.doc{visibility:hidden}</style>') : PAGE_DOC;
   await loaded;
   const sprites = await loadSprites(__POCKETS_SPRITES__);
   const stage = await mountStage(frame.contentDocument!, {
