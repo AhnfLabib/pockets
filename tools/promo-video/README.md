@@ -58,3 +58,39 @@ and a 3 s fade-out; `MUSIC=/path/to/track.mp3 ./render.sh` uses another file.
 Other tools: `npx remotion studio` previews the compositions; `node capture/capture.mjs --scan 1-20` plays seeds
 quickly and writes thumbnails to `out/scan/` to choose another visit (seeds with a quote bubble are listed with
 `bubbleFrames=60`).
+
+## Intro video (LinkedIn, portrait)
+
+A separate 21-second portrait cut, `Intro-Portrait` (1080×1920, 30 fps, 638 frames), with its own scenes in
+`src/intro/`. The whole timeline (scene lengths, every caption, storyboard key frames, stills) is in
+`src/intro/timeline.ts`. The composition reads it, and so do the storyboard and stills scripts.
+
+| Time | On screen |
+|---|---|
+| 0–2.3 s | Hook: a browser crammed with 32 favicon-only tabs, opening close on the strip. Pockets pokes in with a quote and climbs (1.5×, then about 1.8×). "Too many tabs? / Meet Pockets." |
+| 2.3–7.3 s | Push in on the real warning card counting down at real speed. "He gives you five seconds." then "Keep the tab, or it's his." |
+| 7.3–10.5 s | He takes YouTube and bolts with it in his mouth; a pointer presses Undo. "He takes it and runs." then "Undo brings it back." |
+| 10.5–12.7 s | "Pockets never takes": Pinned tabs, Tabs you've typed in, Your last tab |
+| 12.7–15.2 s | The real popup; the Working switch flips on. "Working mode / Distracting sites get taken too." |
+| 15.2–17.3 s | "Everything stays in your browser. / No accounts. No servers. No tracking." |
+| 17.3–21.3 s | End card: icon, "Pockets: the tab-stealing raccoon", "Available on the Chrome Web Store" |
+
+The hook uses a variant of the character page that the extension's harness does not include:
+`harness/crowded.ts`, built by `capture/build-harness.mjs` into `.harness/crowded.html` (gitignored). It runs the
+same stage modules with a 32-tab strip and the matching `tabIndex`/`tabCount`. The repository's `harness/` and `src/`
+are not changed. Music is the skill's "Upbeat Inspiring Corporate" at 0.30 with a 0.2 s fade-in and a 1.5 s fade-out,
+mixed in the composition.
+
+```
+# From the repository root: npm install && npm run build. Then, in tools/promo-video:
+node capture/build-harness.mjs
+node capture/capture.mjs --seed 1 --variant portrait --page crowded --tabs 32 --target 12 --out intro
+node capture/popup.mjs                 # if public/popup/ is not there yet
+export REMOTION_BROWSER=/path/to/chrome-headless-shell   # if Remotion cannot download its own
+./render-intro.sh                      # draft: out/intro/intro-roughcut.mp4 (540x960), storyboard, stills
+FINAL=1 ./render-intro.sh              # full size: out/intro/pockets-intro.mp4
+```
+
+Outputs go to `out/intro/`: `storyboard.png` and `storyboard.md` (from `scripts/intro-stills.mjs` and
+`scripts/intro-sheets.py`), and `stills/` (each still as a 1080×1920 portrait and a 1080×1080 square, PNG RGB).
+`node capture/capture.mjs --scan 1-20 --variant portrait --page crowded` compares seeds on the crowded page.

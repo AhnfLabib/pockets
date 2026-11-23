@@ -6,7 +6,8 @@
   "scripts": {
     "capture": "node capture/capture.mjs",
     "studio": "remotion studio",
-    "render": "bash render.sh"
+    "render": "bash render.sh",
+    "render:intro": "bash render-intro.sh"
   },
   "dependencies": {
     "@remotion/cli": "4.0.545",

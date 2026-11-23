@@ -4,6 +4,10 @@
 // show at that instant. Run from tools/promo-video after `npm run build` in the repository root:
 //   node capture/capture.mjs --seed 123 --variant landscape
 //   node capture/capture.mjs --scan 1-20            (lists seeds with/without a quote bubble, one thumbnail each)
+// The intro video's hook uses the crowded-tab-strip variant page (capture/build-harness.mjs builds it):
+//   node capture/capture.mjs --seed 6 --variant portrait --page crowded --tabs 32 --target 12 --out intro
+// --page crowded loads .harness/crowded.html instead of dist-harness/character.html; --out names the folder under
+// public/footage/ (default: the variant). Without these flags the capture is exactly as before.
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -26,6 +30,16 @@ const VARIANTS = {
 };
 const FPS = 30;
 const T0 = Date.parse('2026-11-19T10:00:00Z');
+
+/** The page to capture: the repository's character page, or the intro's crowded variant. */
+function pageUrl() {
+  if (args.page === 'crowded') {
+    const u = pathToFileURL(path.join(here, '../.harness/crowded.html'));
+    u.search = new URLSearchParams({ tabs: String(args.tabs ?? 32), target: String(args.target ?? 12) }).toString();
+    return u.href;
+  }
+  return pathToFileURL(path.join(root, 'dist-harness/character.html')).href;
+}
 
 const css = (v) => `
 html,body{background:transparent!important;overflow:hidden}
@@ -61,7 +75,7 @@ async function open(browser, v) {
   // A fixed start time and a fixed pause point, so the fake requestAnimationFrame ticks fall at the same instants
   // on every run. The rig and the choreography share one seeded rand, so their interleaving must not vary.
   await page.clock.install({ time: T0 });
-  await page.goto(pathToFileURL(path.join(root, 'dist-harness/character.html')).href);
+  await page.goto(pageUrl());
   await page.waitForFunction(() => window.__pockets.ready, null, { timeout: 20000 });
   await page.addStyleTag({ content: css(v) });
   await page.waitForTimeout(200);
@@ -116,7 +130,7 @@ try {
   if (args.scan) {
     const [a, b] = String(args.scan).split('-').map(Number);
     const v = VARIANTS[args.variant ?? 'landscape'];
-    const dir = path.join(here, '../out/scan');
+    const dir = path.join(here, '../out/scan' + (args.page ? `-${args.page}` : ''));
     mkdirSync(dir, { recursive: true });
     for (let s = a; s <= b; s++) {
       const { ctx, page } = await open(browser, v);
@@ -133,7 +147,7 @@ try {
     const seed = Number(args.seed);
     const variant = args.variant ?? 'landscape';
     const v = VARIANTS[variant];
-    const dir = path.join(here, '../public/footage', variant);
+    const dir = path.join(here, '../public/footage', String(args.out ?? variant));
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     const { ctx, page } = await open(browser, v);
@@ -142,7 +156,7 @@ try {
       onFrame: async (k) => { await el.screenshot({ path: path.join(dir, `f${String(k).padStart(4, '0')}.png`), omitBackground: true }); },
     });
     const box = await el.boundingBox();
-    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ seed, variant, fps: FPS, dsf: v.dsf, frames: r.frames, undoRect: r.undoRect, size: { width: Math.round(box.width * v.dsf), height: Math.round(box.height * v.dsf) }, marks: r.marks }, null, 2));
+    writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ seed, variant, page: args.page ?? 'character', tabs: args.page ? Number(args.tabs ?? 32) : 5, fps: FPS, dsf: v.dsf, frames: r.frames, undoRect: r.undoRect, size: { width: Math.round(box.width * v.dsf), height: Math.round(box.height * v.dsf) }, marks: r.marks }, null, 2));
     console.log(JSON.stringify({ frames: r.frames, bubbleFrames: r.bubbleFrames, marks: r.marks }));
     await ctx.close();
   }

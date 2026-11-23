@@ -2,6 +2,8 @@ import React from "react";
 import { CalculateMetadataFunction, Composition, staticFile } from "remotion";
 import { Promo, DURATION } from "./Promo";
 import type { FootageManifest, PopupManifest, PromoProps } from "./types";
+import { Intro, type IntroProps } from "./intro/Intro";
+import { DURATION as INTRO_DURATION } from "./intro/timeline";
 
 const load = async <J,>(p: string): Promise<J | null> => {
   try {
@@ -17,6 +19,15 @@ const withManifests: CalculateMetadataFunction<PromoProps> = async ({ props }) =
   props: {
     ...props,
     footage: await load<FootageManifest>(`footage/${props.variant}/manifest.json`),
+    popup: await load<PopupManifest>("popup/manifest.json"),
+  },
+});
+
+// The LinkedIn intro reads the crowded-tab footage (public/footage/intro) and the popup frames.
+const introManifests: CalculateMetadataFunction<IntroProps> = async ({ props }) => ({
+  props: {
+    ...props,
+    footage: await load<FootageManifest>("footage/intro/manifest.json"),
     popup: await load<PopupManifest>("popup/manifest.json"),
   },
 });
@@ -42,6 +53,16 @@ export const RemotionRoot: React.FC = () => (
       height={1920}
       defaultProps={{ variant: "portrait", footage: null, popup: null } as PromoProps}
       calculateMetadata={withManifests}
+    />
+    <Composition
+      id="Intro-Portrait"
+      component={Intro}
+      durationInFrames={INTRO_DURATION}
+      fps={30}
+      width={1080}
+      height={1920}
+      defaultProps={{ footage: null, popup: null, music: "" } as IntroProps}
+      calculateMetadata={introManifests}
     />
   </>
 );
