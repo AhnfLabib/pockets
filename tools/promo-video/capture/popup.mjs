@@ -1,7 +1,8 @@
 // Captures the extension's real toolbar popup (dist/popup.html) with chrome.* stubbed, the same stub as
 // tools/store/shots.mjs: frame 0 with working mode off, then the switch is clicked and the switch's CSS
 // transition is stepped one video frame (1/30 s) at a time. Run from tools/promo-video after `npm run build`.
-// Flags (heist video): --scheme dark captures the popup's dark theme; --out names the folder under public/ (default popup).
+// Flags (heist video): --scheme dark captures the popup's dark theme; --out names the folder under public/ (default popup);
+// --dsf overrides the capture scale (default 3).
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -14,12 +15,13 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) =>
   if (a.startsWith('--')) acc.push([a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]);
   return acc;
 }, []));
+const DSF = args.dsf ? Number(args.dsf) : 3;
 const dir = path.join(here, '../public', String(args.out ?? 'popup'));
 rmSync(dir, { recursive: true, force: true });
 mkdirSync(dir, { recursive: true });
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 320, height: 600 }, deviceScaleFactor: 3, colorScheme: args.scheme === 'dark' ? 'dark' : 'light' });
+const ctx = await browser.newContext({ viewport: { width: 320, height: 600 }, deviceScaleFactor: DSF, colorScheme: args.scheme === 'dark' ? 'dark' : 'light' });
 await ctx.addInitScript(() => {
   const now = Date.now();
   const db = {
@@ -60,6 +62,6 @@ for (let k = 1; k <= FRAMES; k++) {
   }, Math.round((k * 1000) / 30));
   await shot(k);
 }
-writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ frames: FRAMES + 1, dsf: 3, switchRect, size: { width: 320 * 3, height: height * 3 } }, null, 2));
+writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ frames: FRAMES + 1, dsf: DSF, switchRect, size: { width: 320 * DSF, height: height * DSF } }, null, 2));
 console.log({ height, frames: FRAMES + 1, switchRect });
 await browser.close();

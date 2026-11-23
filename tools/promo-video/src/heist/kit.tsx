@@ -1,9 +1,12 @@
 // Building blocks for the heist cut: the night palette, bundled fonts, the footage camera, the spotlight, captions,
 // the case-file tag, the corner countdown, zoom punches and the whip-pan's motion blur.
-import React from "react";
+import React, { createContext, useContext } from "react";
 import { AbsoluteFill, Img, continueRender, delayRender, spring, staticFile, useVideoConfig } from "remotion";
 import "@fontsource/anton/400.css";
 import "@fontsource/space-mono/700.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
 import type { FootageManifest } from "../types";
 
 export const N = {
@@ -16,33 +19,66 @@ export const N = {
 };
 export const HEAVY = '"Anton", Impact, sans-serif';
 export const MONO = '"Space Mono", ui-monospace, monospace';
+/** Browser UI face for the tab bar. */
+export const UI = '"Inter", system-ui, sans-serif';
 
 // Block rendering until both bundled fonts are ready, so no frame or still falls back to a system face.
 const fontHandle = typeof document !== "undefined" ? delayRender("heist fonts") : null;
 if (typeof document !== "undefined") {
-  Promise.all([document.fonts.load('400 100px "Anton"'), document.fonts.load('700 30px "Space Mono"')])
+  Promise.all([
+    document.fonts.load('400 100px "Anton"'), document.fonts.load('700 30px "Space Mono"'),
+    document.fonts.load('400 20px "Inter"'), document.fonts.load('500 20px "Inter"'), document.fonts.load('600 20px "Inter"'),
+  ])
     .then(() => continueRender(fontHandle!))
     .catch(() => continueRender(fontHandle!));
 }
 
-/** Layout of the frame: portrait 1080x1920 or square 1080x1080. Positions are given as fractions of the frame. */
-export function useLayout() {
-  const { width: W, height: H } = useVideoConfig();
-  const square = H < W * 1.2;
-  return {
-    W, H, square,
-    /** Where the subject (Pockets, the card, the tab) sits on screen. */
-    subject: { x: W * 0.5, y: square ? H * 0.38 : H * 0.36 },
-    /** Footage scale multiplier: square frames are shorter, so the camera sits a little wider. */
-    zoom: square ? 0.8 : 1,
-    /** Centre line of the caption block. */
-    captionY: square ? H * 0.79 : H * 0.72,
-    captionSize: square ? 108 : 158,
-  };
+export type Kind = "portrait" | "square" | "landscape";
+
+/** Everything a scene needs to lay itself out natively for its frame. Positions are in screen px. */
+export interface HeistLayout {
+  W: number; H: number; kind: Kind;
+  square: boolean; land: boolean;
+  /** Where the subject (Pockets, the card, the tab) sits on screen. */
+  subject: { x: number; y: number };
+  /** Footage scale multiplier: shorter frames sit the camera a little wider. */
+  zoom: number;
+  /** The caption column: centre x, width, centre line y, and the largest row size. */
+  captionX: number; captionW: number; captionY: number; captionSize: number;
+  /** The giant countdown digit, anchored top-right. */
+  digit: { right: number; top: number; size: number };
 }
 
-/** A fast, overshoot-free snap: 0 to 1 in about five frames. */
-export const snap = (f: number, fps: number) => (f < 0 ? 0 : spring({ frame: f, fps, config: { damping: 26, stiffness: 520, mass: 0.6 } }));
+export function layoutFor(W: number, H: number): HeistLayout {
+  const kind: Kind = W > H * 1.2 ? "landscape" : H > W * 1.2 ? "portrait" : "square";
+  if (kind === "landscape") {
+    // Pockets and the footage large on the left two thirds, the captions in a column on the right.
+    return { W, H, kind, square: false, land: true, subject: { x: Math.round(W * 0.33), y: Math.round(H * 0.53) }, zoom: 0.85,
+      captionX: Math.round(W * 0.765), captionW: 820, captionY: Math.round(H * 0.62), captionSize: 150, digit: { right: 120, top: 10, size: 300 } };
+  }
+  if (kind === "square") {
+    return { W, H, kind, square: true, land: false, subject: { x: W * 0.5, y: H * 0.38 }, zoom: 0.8,
+      captionX: W / 2, captionW: W - 110, captionY: H * 0.79, captionSize: 108, digit: { right: 48, top: 4, size: 240 } };
+  }
+  return { W, H, kind, square: false, land: false, subject: { x: W * 0.5, y: H * 0.36 }, zoom: 1,
+    captionX: W / 2, captionW: W - 110, captionY: H * 0.72, captionSize: 158, digit: { right: 60, top: 40, size: 560 } };
+}
+
+// LayoutContext pattern: the composition provides the layout once, every scene reads it with useLayout().
+const LayoutCtx = createContext<HeistLayout | null>(null);
+export const HeistLayoutProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { width, height } = useVideoConfig();
+  return <LayoutCtx.Provider value={layoutFor(width, height)}>{children}</LayoutCtx.Provider>;
+};
+export function useLayout(): HeistLayout {
+  const ctx = useContext(LayoutCtx);
+  const { width, height } = useVideoConfig();
+  return ctx ?? layoutFor(width, height);
+}
+
+/** A fast, overshoot-free snap: 0 to 1 in about five frames, starting on frame 0. */
+// Already partly in on its own frame 0 (spring frame f + 1), so whatever it reveals shows on the beat frame itself.
+export const snap = (f: number, fps: number) => (f < 0 ? 0 : spring({ frame: f + 1, fps, config: { damping: 26, stiffness: 520, mass: 0.6 } }));
 /** Zoom punch: a scale that snaps from `amount` above 1 down to 1 just after frame 0. */
 export const punch = (f: number, fps: number, amount = 0.16) => 1 + amount * (1 - snap(f, fps));
 
@@ -71,10 +107,20 @@ export function headAt(track: Track | null, n: number, win = 4): [number, number
 export const Shot: React.FC<{
   m: FootageManifest; n: number; cx: number; cy: number; x: number; y: number; scale: number;
   bare?: boolean; blur?: number; style?: React.CSSProperties;
-}> = ({ m, n, cx, cy, x, y, scale, bare, blur = 0, style }) => {
+  /** Hide the captured page above this CSS y (its own tab strip and toolbar), with a soft edge. */
+  cropTop?: number;
+  /** Fade the page out before its right edge (CSS px of fade), so no hard page edge shows in wide frames. */
+  fadeRight?: number;
+  /** Mirror horizontally about the point (cx, cy). */
+  flip?: boolean;
+}> = ({ m, n, cx, cy, x, y, scale, bare, blur = 0, style, cropTop, fadeRight, flip }) => {
   const k = Math.max(0, Math.min(m.frames - 1, Math.round(n)));
   const cssW = m.size.width / m.dsf;
   const id = `mb${Math.round(blur)}`;
+  const masks: string[] = [];
+  if (cropTop !== undefined) masks.push(`linear-gradient(to bottom, transparent ${cropTop * scale}px, #000 ${(cropTop + 14) * scale}px)`);
+  if (fadeRight) masks.push(`linear-gradient(to left, transparent 0px, #000 ${fadeRight * scale}px)`);
+  const mask: React.CSSProperties = masks.length ? { maskImage: masks.join(", "), WebkitMaskImage: masks.join(", "), maskComposite: "intersect", WebkitMaskComposite: "source-in" } : {};
   return (
     <>
       {blur > 0.5 ? (
@@ -88,7 +134,9 @@ export const Shot: React.FC<{
         src={staticFile(`footage/${bare ? "heist-bare" : "heist"}/f${String(k).padStart(4, "0")}.png`)}
         style={{
           position: "absolute", left: x - cx * scale, top: y - cy * scale, width: cssW * scale, maxWidth: "none",
-          filter: blur > 0.5 ? `url(#${id})` : undefined, ...style,
+          filter: blur > 0.5 ? `url(#${id})` : undefined,
+          ...(flip ? { transform: "scaleX(-1)", transformOrigin: `${cx * scale}px ${cy * scale}px` } : {}),
+          ...mask, ...style,
         }}
       />
     </>
@@ -128,10 +176,10 @@ export const Row: React.FC<{ text: string; size: number; f: number; fps: number 
   );
 };
 
-/** Fit a row into the frame width: Anton caps run about 0.47 em per character. */
-export const fit = (rows: string[], size: number, W: number) => {
+/** Fit a row into a column `width` px wide: Anton caps run about 0.47 em per character. */
+export const fit = (rows: string[], size: number, width: number) => {
   const longest = Math.max(...rows.map((r) => r.replace(/\*/g, "").length));
-  return Math.min(size, (W - 110) / (longest * 0.47));
+  return Math.min(size, width / (longest * 0.47));
 };
 
 /** The small monospace case-file tag, e.g. TARGET: YouTube · IDLE 2 DAYS. */

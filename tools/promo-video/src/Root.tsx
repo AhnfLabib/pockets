@@ -86,6 +86,17 @@ export const RemotionRoot: React.FC = () => (
       defaultProps={{ footage: null, track: null, popup: null } as HeistProps}
       calculateMetadata={heistManifests}
     />
+    {/* The same scenes and beat timing laid out natively for a landscape frame (no letterboxing). */}
+    <Composition
+      id="Heist-Landscape"
+      component={Heist}
+      durationInFrames={HEIST_DURATION}
+      fps={30}
+      width={1920}
+      height={1080}
+      defaultProps={{ footage: null, track: null, popup: null } as HeistProps}
+      calculateMetadata={heistManifests}
+    />
     {/* The same timeline laid out natively for a square frame (stills only). */}
     <Composition
       id="Heist-Square"

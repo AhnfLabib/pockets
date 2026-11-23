@@ -51,19 +51,21 @@ for row, ax in enumerate(axes):
         s.set_color("#2a2c31")
     ax.set_xticks(np.arange(np.ceil(a), b, 0.5))
     ax.grid(False)
-axes[0].set_title(f"Heist-Portrait beat map: {beats['bpm']:.1f} BPM, {beats['phraseBeats']}-beat phrases (red), track offset {beats['offset']:.3f} s; "
+axes[0].set_title(f"Heist beat map (Heist-Portrait and Heist-Landscape share it): {beats['bpm']:.1f} BPM, {beats['phraseBeats']}-beat phrases (red), track offset {beats['offset']:.3f} s; "
                   f"lanes: cuts (white), captions (blue), action hits (red stars); video ends at {dur:.2f} s (dashed)",
                   color=INK, fontsize=13, loc="left")
 axes[-1].set_xlabel("video time (s); blue line = onset strength, grey = loudness; numbers = beat index", color=DIM)
 plt.subplots_adjust(left=0.02, right=0.99, top=0.95, bottom=0.06, hspace=0.18)
 plt.savefig(os.path.join(OUT, "beat-map.png"), dpi=80, facecolor=BG)
 
-lines = ["# Heist-Portrait: beat-synced events", "",
+lines = ["# Heist: beat-synced events (Heist-Portrait 1080x1920 and Heist-Landscape 1920x1080, same timing)", "",
          f"Track: \"Fast Percussion\" by lNPLUSMUSIC (Pixabay). Tempo {beats['bpm']:.2f} BPM (beat {beats['period']*1000:.1f} ms), "
          f"{beats['phraseBeats']}-beat phrases; video starts {beats['offset']:.3f} s into the track. Duration {dur:.2f} s ({ev['duration']} frames at 30 fps), "
          f"ending 0.5 s after the final hit (beat {ev['final']}) with a fade.", "",
          f"Action hits: steal on beat {ev['steal']}, Undo on beat {ev['undo']} (the two strongest adjacent phrase accents mid-story), "
          f"end card on beat {ev['endcard']}, final hit on beat {ev['final']}.", "",
+         "Countdown: " + ", ".join(f"{e['what'].split()[-1]} on beat {e['beat']} ({e['frame']/30:.3f} s, frame {e['frame']})" for e in ev["events"] if e["what"].startswith("countdown digit"))
+         + f"; the steal lands on the next beat, {ev['steal']}.", "",
          "| Time (s) | Frame | Beat | Kind | Event |", "|---|---|---|---|---|"]
 for e in ev["events"]:
     lines.append(f"| {e['frame']/30:.3f} | {e['frame']} | {e['beat']} | {e['kind']} | {e['what']} |")

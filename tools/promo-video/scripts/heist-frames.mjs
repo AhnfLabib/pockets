@@ -1,5 +1,5 @@
 // Renders single frames of the heist compositions as PNGs, bundling the project once.
-//   node scripts/heist-frames.mjs <Heist-Portrait|Heist-Square> <outDir> name:frame[,name:frame...]
+//   node scripts/heist-frames.mjs <Heist-Portrait|Heist-Landscape|Heist-Square> <outDir> name:frame[,name:frame...]
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync } from 'node:fs';

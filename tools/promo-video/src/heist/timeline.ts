@@ -66,14 +66,14 @@ export const SCENES = {
 export type SceneName = keyof typeof SCENES;
 
 /** Hard cuts inside scenes (each also a beat), on top of the scene boundaries. */
+/** The warning's punch-in on the card (before the countdown starts). */
+export const CARD_PUNCH = WARN + 2;
 export const INNER_CUTS: { beat: number; what: string }[] = [
-  { beat: WARN + 2, what: "countdown 5: punch in on the card" },
-  { beat: WARN + 4, what: "countdown 4: jump cut" },
-  { beat: WARN + 6, what: "countdown 3: jump cut" },
-  { beat: WARN + 7, what: "freeze on the grab" },
+  { beat: CARD_PUNCH, what: "punch in on the card" },
+  ...[5, 4, 3, 2, 1].map((n, i) => ({ beat: STEAL - 5 + i, what: `countdown ${n}: jump cut to the card's own tick` })),
   { beat: UNDO, what: "Undo click: punch in" },
-  { beat: UNDO + 2, what: "cut to the tab strip: YouTube pops back" },
-  { beat: SCENES.working[0] + 4, what: "spotlight swings to the YouTube tab" },
+  { beat: UNDO + 2, what: "cut to the tab bar: YouTube pops back" },
+  { beat: SCENES.working[0] + 4, what: "cut to the tab bar: spotlight swings to YouTube" },
 ];
 
 export interface Line {
@@ -103,13 +103,12 @@ export const CAPTIONS: Line[] = [
   { beat: S9, until: ENDCARD, rows: ["*Nothing*", "leaves your", "browser."] },
 ];
 
-/** The giant corner countdown during the warning: digit, beat. The footage jumps to the card's own tick there. */
-export const COUNTDOWN: { n: number; beat: number }[] = [
-  { n: 5, beat: WARN + 2 },
-  { n: 4, beat: WARN + 4 },
-  { n: 3, beat: WARN + 6 },
-];
-export const GRAB = WARN + 7;
+/**
+ * The giant countdown during the warning: 5, 4, 3, 2, 1 on the five consecutive beats before the steal accent, so
+ * the take lands on the accent right after "1". At each digit the footage jumps to the card's own tick, so the card's
+ * "Mine in N..." always matches the big digit.
+ */
+export const COUNTDOWN: { n: number; beat: number }[] = [5, 4, 3, 2, 1].map((n, i) => ({ n, beat: STEAL - 5 + i }));
 
 /** Every beat-synced event, for the beat map, heist.md and the sync check. */
 export function events(): { frame: number; beat: number; kind: "cut" | "caption" | "hit"; what: string }[] {
