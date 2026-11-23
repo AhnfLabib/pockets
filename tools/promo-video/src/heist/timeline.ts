@@ -70,7 +70,7 @@ export type SceneName = keyof typeof SCENES;
 export const CARD_PUNCH = WARN + 2;
 export const INNER_CUTS: { beat: number; what: string }[] = [
   { beat: CARD_PUNCH, what: "punch in on the card" },
-  ...[5, 4, 3, 2, 1].map((n, i) => ({ beat: STEAL - 5 + i, what: `countdown ${n}: jump cut to the card's own tick` })),
+  ...[5, 4, 3, 2, 1].map((n, i) => ({ beat: STEAL - 5 + i, what: `jump cut ${n}` })),
   { beat: UNDO, what: "Undo click: punch in" },
   { beat: UNDO + 2, what: "cut to the tab bar: YouTube pops back" },
   { beat: SCENES.working[0] + 4, what: "cut to the tab bar: spotlight swings to YouTube" },
