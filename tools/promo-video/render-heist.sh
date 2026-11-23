@@ -24,10 +24,11 @@ for TAG in portrait landscape; do
   if [[ "${DRAFT:-}" == 1 ]]; then
     OUT="out/heist/pockets-heist-$TAG-draft.mp4"; Q=(--crf=14 --image-format=jpeg --jpeg-quality=92); CRF=23; PRESET=veryfast
   else
-    # Near-lossless intermediate from PNG frames, so the one real encode is the final one below.
+    # Near-lossless BT.709 intermediate from PNG frames, so the one real encode is the final one below (and the
+    # BT.709 tags on it are true: without --color-space the intermediate is untagged BT.601 and red shifts orange).
     OUT="out/heist/pockets-heist-$TAG.mp4"; Q=(--crf=4 --image-format=png); CRF=17; PRESET=slow
   fi
-  npx remotion render src/index.ts "$COMP" "out/heist/video-$TAG.mp4" --codec=h264 --pixel-format=yuv420p --muted "${Q[@]}"
+  npx remotion render src/index.ts "$COMP" "out/heist/video-$TAG.mp4" --codec=h264 --pixel-format=yuv420p --color-space=bt709 --muted "${Q[@]}"
   # H.264 High profile, limited-range yuv420p BT.709, AAC 192 kb/s, moov atom first (faststart).
   ffmpeg -y -loglevel error -i "out/heist/video-$TAG.mp4" -i out/heist/music.wav -map 0:v:0 -map 1:a:0 \
     -vf scale=out_range=tv -c:v libx264 -profile:v high -preset "$PRESET" -crf "$CRF" -pix_fmt yuv420p -color_range tv \
